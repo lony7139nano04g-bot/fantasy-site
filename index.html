@@ -1,0 +1,1404 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fantasy 籃球戰績</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
+<style>
+/* Design tokens the Claude Dashboard runtime normally provides, for the standalone (Railway) build. */
+:root {
+  color-scheme: light dark;
+  --color-bg: #f6f3ee; --color-panel: #ffffff; --color-fg: #1f1d1a; --color-fg-muted: #6b665e; --color-border-line: #e4ded4;
+  --color-ok: #2f8f5b; --color-bad: #d0453a; --color-warn: #c98a12;
+  --cds-font-size-body: 0.95rem; --cds-font-size-caption: 0.8rem; --cds-text-secondary: var(--color-fg-muted);
+  --cds-gap-sm: 0.5rem; --cds-gap-md: 0.85rem; --cds-gap-lg: 1.25rem;
+  --cds-dur-slow: 240ms; --cds-ease-out: cubic-bezier(.2, .8, .2, 1);
+  --cds-chart-grid: #e8e2d8; --cds-chart-axis: #b9b1a4; --cds-chart-reference: #8f877b;
+  --cds-surface-popover: #ffffff; --cds-shadow-popover: 0 8px 24px -8px rgba(0, 0, 0, .25); --cds-border: var(--color-border-line);
+  --font-anthropic-sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #161513; --color-panel: #201f1c; --color-fg: #f1ede6; --color-fg-muted: #a39d93; --color-border-line: #34312c;
+    --color-ok: #4cb37a; --color-bad: #ec6a5e; --color-warn: #e0a53a;
+    --cds-chart-grid: #2f2c28; --cds-chart-axis: #5d5850; --cds-chart-reference: #8a8378; --cds-surface-popover: #2a2925;
+  }
+}
+:root[data-theme="dark"] {
+  --color-bg: #161513; --color-panel: #201f1c; --color-fg: #f1ede6; --color-fg-muted: #a39d93; --color-border-line: #34312c;
+  --color-ok: #4cb37a; --color-bad: #ec6a5e; --color-warn: #e0a53a;
+  --cds-chart-grid: #2f2c28; --cds-chart-axis: #5d5850; --cds-chart-reference: #8a8378; --cds-surface-popover: #2a2925;
+}
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding: 24px 16px 48px; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); overflow-x: hidden; }
+.dash-skeleton { color: transparent !important; border-radius: 8px; background: color-mix(in srgb, currentColor 10%, transparent); min-height: 1em; }
+[hidden] { display: none !important; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+// Stand-in for the Claude Dashboard runtime, so dashboard/index.html also runs as a plain static site (Railway).
+// Implements the part of `dash` the page uses: data(), calc(), onData(), setLink(). Datasets are the JSON files
+// under data/; calcs run once all their inputs have loaded.
+window.dash = (() => {
+  const FILES = ['weekly', 'categories', 'roster', 'vault'];
+  const state = {}, calcs = {}, subs = [];
+  for (const id of FILES) state[id] = { status: 'loading', data: null };
+  const notify = () => { for (const fn of subs) fn(); };
+  function runCalcs() {
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (const [id, def] of Object.entries(calcs)) {
+        if (state[id].status !== 'loading') continue;
+        const ins = def.inputs.map((i) => state[i]);
+        if (ins.some((s) => !s || ['error', 'missing'].includes(s.status))) { state[id] = { status: 'error', data: null }; progress = true; continue; }
+        if (!ins.every((s) => s.status === 'ok')) continue;
+        try { state[id] = { status: 'ok', data: def.fn(...ins.map((s) => s.data)) }; } catch (e) { console.error(id, e); state[id] = { status: 'error', data: null }; }
+        progress = true;
+      }
+    }
+  }
+  function load() {
+    for (const id of FILES) {
+      fetch(`data/${id}.json`, { cache: 'no-cache' })
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((data) => { state[id] = { status: 'ok', data }; })
+        .catch(() => { state[id] = { status: 'error', data: null }; })
+        .finally(() => { runCalcs(); notify(); });
+    }
+  }
+  document.addEventListener('DOMContentLoaded', load);
+  return {
+    calc(id, def) { calcs[id] = def; state[id] = { status: 'loading', data: null }; },
+    data(id) { return state[id] || { status: 'missing', data: null }; },
+    onData(fn) { subs.push(fn); },
+    setLink(tab) { history.replaceState(null, '', '#' + tab); },
+  };
+})();
+</script>
+</head>
+<body>
+<style>
+/* Layout: centred column. Rounded scoreboard (team + pickers left, 2x2 LED stats right) over pill tabs and soft rounded cards.
+   Type: Fredoka for latin/digits, Huninn (粉圓) for Chinese. Rank colour: 1 = green, 14 = red. */
+@font-face { font-family: "FB Fredoka"; src: url("fonts/fredoka.woff2") format("woff2"); font-weight: 300 700; font-display: swap; }
+@font-face { font-family: "FB Huninn"; src: url("fonts/huninn.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+.fb {
+  --fb-ball: #e2692f;           /* basketball leather */
+  --fb-ball-soft: color-mix(in srgb, var(--fb-ball) 14%, transparent);
+  --fb-ball-seam: #3a1d10;
+  --fb-away: #3a78c2;           /* road-jersey blue */
+  --fb-wood: #f3e3cc;           /* hardwood */
+  --fb-wood-line: #d9b88c;
+  --fb-board: #1a1d24;          /* scoreboard stays dark in both themes */
+  --fb-board-2: #262a33;
+  --fb-board-fg: #fbf7f1;
+  --fb-board-dim: #a7adb8;
+  --fb-led: #ffbe4d;
+  --fb-court-line: rgba(255, 255, 255, .08);
+  --fb-shadow: 0 1px 2px color-mix(in srgb, var(--color-fg) 8%, transparent), 0 10px 28px -16px color-mix(in srgb, var(--color-fg) 28%, transparent);
+  --fb-r: 20px;
+  --fb-font: "FB Fredoka", "FB Huninn", "Yuanti TC", "Arial Rounded MT Bold", var(--font-anthropic-sans), sans-serif;
+  max-width: 1180px; margin-inline: auto;
+  display: grid; gap: var(--cds-gap-lg);
+  font-family: var(--fb-font);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fb { --fb-ball: #f2813f; --fb-away: #6aa3e3; --fb-wood: #3b2e21; --fb-wood-line: #7d5d3a; } }
+:root[data-theme="dark"] .fb { --fb-ball: #f2813f; --fb-away: #6aa3e3; --fb-wood: #3b2e21; --fb-wood-line: #7d5d3a; }
+.fb select, .fb button { font-family: var(--fb-font); }
+
+/* ---- scoreboard ---- */
+.fb-board { position: relative; overflow: hidden; isolation: isolate; color: var(--fb-board-fg);
+  background: radial-gradient(110% 130% at 100% 0%, color-mix(in srgb, var(--fb-ball) 22%, var(--fb-board-2)), var(--fb-board) 58%);
+  border-radius: calc(var(--fb-r) + 6px); padding: clamp(1.1rem, 3vw, 2rem);
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: var(--cds-gap-lg) clamp(1rem, 3vw, 2.5rem); align-items: center;
+  box-shadow: var(--fb-shadow); }
+@media (max-width: 46rem) { .fb-board { grid-template-columns: minmax(0, 1fr); } }
+.fb-court { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
+.fb-court * { fill: none; stroke: var(--fb-court-line); stroke-width: 2; }
+.fb-board-main { display: grid; gap: var(--cds-gap-md); min-width: 0; }
+.fb-board-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cds-gap-sm); }
+.fb-eyebrow { display: inline-flex; align-items: center; gap: .45rem; font-weight: 500; font-size: var(--cds-font-size-caption); color: var(--fb-board-dim); min-width: 0; }
+.fb-ballicon { width: 1.3rem; height: 1.3rem; flex: none; }
+.fb-ballicon circle { fill: var(--fb-ball); }
+.fb-ballicon path { fill: none; stroke: var(--fb-ball-seam); stroke-width: 1.4; }
+.fb-weekpill { font-weight: 600; font-size: var(--cds-font-size-caption); color: var(--fb-board); background: var(--fb-led); border-radius: 999px; padding: .15rem .7rem; white-space: nowrap; }
+.fb-title { margin: 0; display: grid; gap: .3rem; font-weight: 400; text-wrap: balance; }
+.fb-title small { font-size: var(--cds-font-size-caption); font-weight: 500; color: var(--fb-board-dim); letter-spacing: .04em; }
+.fb-title span { font-weight: 700; font-size: clamp(1.9rem, 5vw, 3rem); line-height: 1.05; overflow-wrap: anywhere; }
+.fb-take { margin: 0; color: var(--fb-board-dim); font-size: var(--cds-font-size-body); line-height: 1.6; min-height: 1.6em; max-width: 60ch; }
+.fb-note-led { margin: 0; font-size: var(--cds-font-size-caption); color: var(--fb-led); line-height: 1.5; }
+.fb-bar { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-md); align-items: end; }
+.fb-field { display: grid; gap: 4px; font-size: var(--cds-font-size-caption); font-weight: 500; color: var(--color-fg-muted); min-width: 0; }
+.fb-board .fb-field { color: var(--fb-board-dim); }
+.fb-field select { font-size: var(--cds-font-size-body); color: var(--color-fg); background: var(--color-panel); border: 1.5px solid var(--color-border-line); border-radius: 999px; padding: .4rem 1rem; min-width: 10rem; max-width: 100%; cursor: pointer; }
+.fb-board .fb-field select { color: var(--fb-board-fg); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color-scheme: dark; }
+.fb-field select:focus-visible { outline: 2px solid var(--fb-ball); outline-offset: 2px; }
+.fb-side { display: grid; gap: var(--cds-gap-md); min-width: 0; }
+.fb-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--cds-gap-sm); }
+.fb-core { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr); align-items: end; gap: .5rem; text-align: center; }
+.fb-core-p { display: grid; justify-items: center; gap: .3rem; min-width: 0; margin: 0; }
+.fb-core-p img { width: clamp(3.6rem, 9vw, 4.8rem); aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: #fff; box-shadow: 0 0 0 3px var(--fb-board), 0 0 0 5px rgba(255,255,255,.22); }
+.fb-core-1 img { width: clamp(5.6rem, 14vw, 7.4rem); box-shadow: 0 0 0 3px var(--fb-board), 0 0 0 6px var(--fb-ball), 0 12px 30px -8px color-mix(in srgb, var(--fb-ball) 70%, transparent); }
+.fb-core-2 img { width: clamp(4.2rem, 10.5vw, 5.6rem); box-shadow: 0 0 0 3px var(--fb-board), 0 0 0 5px #c9d0da, 0 8px 22px -10px rgba(201, 208, 218, .7); }
+.fb-core-3 img { box-shadow: 0 0 0 3px var(--fb-board), 0 0 0 5px #b8794a, 0 8px 22px -10px rgba(184, 121, 74, .7); }
+.fb-core-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .2rem; }
+.fb-core-tags span { font-size: .64rem; font-weight: 600; line-height: 1.4; color: var(--fb-board-fg); background: rgba(255,255,255,.1); border-radius: 999px; padding: 0 .4rem; }
+.fb-core-1 .fb-core-tags span { background: color-mix(in srgb, var(--fb-ball) 35%, transparent); }
+.fb-tags { display: inline-flex; flex-wrap: wrap; gap: .25rem; }
+.fb-tags span { font-size: .7rem; font-weight: 600; color: var(--fb-ball); background: var(--fb-ball-soft); border-radius: 999px; padding: .05rem .45rem; }
+.fb-tags-weak span { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 12%, transparent); }
+.fb-tags span.fb-warm { color: color-mix(in srgb, var(--fb-ball) 75%, var(--color-fg)); background: color-mix(in srgb, var(--fb-ball) 34%, transparent); }
+.fb-tags span.fb-hot { color: #fff; background: var(--fb-ball); }
+.fb-tags-weak span.fb-warm { color: color-mix(in srgb, var(--color-bad) 75%, var(--color-fg)); background: color-mix(in srgb, var(--color-bad) 30%, transparent); }
+.fb-tags-weak span.fb-hot { color: #fff; background: var(--color-bad); }
+.fb-flag { display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 999px; padding: .05rem .55rem; margin-inline: .1rem; }
+.fb-flag-H { color: #fff; background: var(--fb-ball); }
+.fb-flag-A { color: #fff; background: var(--fb-away); }
+.fb-flag-G { color: var(--fb-board); background: var(--fb-led); }
+.fb-seg { display: inline-flex; padding: .25rem; gap: .25rem; border-radius: 999px; background: color-mix(in srgb, var(--color-fg) 6%, var(--color-panel)); border: 1px solid var(--color-border-line); }
+.fb-seg-btn { font: inherit; font-size: var(--cds-font-size-caption); font-weight: 600; border: 0; border-radius: 999px; padding: .3rem .85rem; background: none; color: var(--color-fg-muted); cursor: pointer; }
+.fb-seg-btn[aria-pressed="true"] { background: var(--fb-ball); color: #fff; }
+.fb-seg-btn:focus-visible { outline: 2px solid var(--fb-ball); outline-offset: 2px; }
+.fb-stream-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .6rem; }
+.fb-stream-tiles div { background: color-mix(in srgb, var(--fb-wood) 40%, var(--color-panel)); border-radius: 14px; padding: .7rem .9rem; display: grid; gap: .15rem; }
+.fb-stream-tiles span { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fb-stream-tiles b { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fb-stream-tiles small { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fb-cal { display: inline-block; min-width: 2.4rem; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .1rem .45rem; text-align: center; }
+.fb-cal-S { color: #fff; background: var(--color-ok); }
+.fb-cal-B { color: #fff; background: var(--fb-ball); }
+.fb-cal-X { color: var(--color-fg-muted); background: color-mix(in srgb, var(--color-fg) 10%, transparent); }
+.fb-cal-none { color: var(--color-fg-muted); background: transparent; border: 1px dashed var(--color-border-line); }
+#stream-cal tfoot td { font-weight: 600; border-top: 2px solid var(--fb-wood-line); }
+.fb-open { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: .2rem; }
+.fb-open span { font-size: .68rem; font-weight: 700; color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 12%, transparent); border-radius: 999px; padding: 0 .4rem; }
+.fb-criteria { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .6rem; }
+.fb-criteria li { display: grid; justify-items: start; gap: .35rem; padding: .7rem .85rem; border-radius: 14px; background: color-mix(in srgb, var(--fb-wood) 40%, var(--color-panel)); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.5; }
+.fb-criteria .fb-flag { margin: 0; }
+.fb-rising { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: var(--cds-gap-lg); }
+.fb-rs { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--fb-r); padding: 1rem 1.1rem; display: grid; gap: .6rem; box-shadow: var(--fb-shadow); min-width: 0; }
+.fb-rs-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; }
+.fb-rs-name { font-size: 1.1rem; font-weight: 700; }
+.fb-rs-meta { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fb-rs-flags { display: flex; flex-wrap: wrap; gap: .3rem; }
+.fb-rs table { font-size: .74rem; }
+.fb-rs td:first-child { text-align: left; white-space: nowrap; font-weight: 600; }
+.fb-legend-bands { display: flex; flex-wrap: wrap; gap: .35rem; }
+.fb-band { display: inline-block; font-size: .72rem; font-weight: 600; border-radius: 999px; padding: .1rem .6rem; }
+.fb-band-A { color: #fff; background: var(--fb-ball); }
+.fb-band-B { color: color-mix(in srgb, var(--fb-ball) 70%, var(--color-fg)); background: color-mix(in srgb, var(--fb-ball) 36%, transparent); }
+.fb-band-C { color: color-mix(in srgb, var(--fb-ball) 80%, var(--color-fg)); background: color-mix(in srgb, var(--fb-ball) 15%, transparent); }
+.fb-band-r1 { color: #fff; background: var(--color-bad); }
+.fb-band-r2 { color: color-mix(in srgb, var(--color-bad) 75%, var(--color-fg)); background: color-mix(in srgb, var(--color-bad) 22%, transparent); }
+.fb-band-g1 { color: #fff; background: var(--color-ok); }
+.fb-band-g2 { color: color-mix(in srgb, var(--color-ok) 75%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 22%, transparent); }
+.fb-band-x { color: #fff; background: var(--color-ok); }
+.fb-band-y { color: color-mix(in srgb, var(--color-ok) 70%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 32%, transparent); }
+.fb-band-z { color: color-mix(in srgb, var(--color-ok) 80%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 13%, transparent); }
+#roster-table td.fb-stat { padding: .2rem .3rem; }
+#roster-table td.fb-stat span { display: inline-block; min-width: 2.6rem; border-radius: 999px; padding: .15rem .45rem; }
+.fb-medal { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; margin-left: .35rem; border-radius: 50%; font-size: .62rem; font-weight: 700; color: var(--fb-board); vertical-align: .05em; }
+.fb-medal-1 { background: var(--fb-ball); color: #fff; }
+.fb-medal-2 { background: #c9d0da; }
+.fb-medal-3 { background: #b8794a; color: #fff; }
+.fb-core-ace { font-size: .65rem; font-weight: 700; letter-spacing: .06em; color: var(--fb-board); background: var(--fb-led); border-radius: 999px; padding: .05rem .5rem; margin-top: -.9rem; position: relative; }
+.fb-core-name { font-weight: 600; font-size: .82rem; line-height: 1.2; overflow-wrap: anywhere; }
+.fb-core-1 .fb-core-name { font-size: 1rem; }
+.fb-core-line { font-size: .68rem; line-height: 1.35; color: var(--fb-board-dim); }
+@media (prefers-reduced-motion: no-preference) { .fb-core-1 img { animation: fb-pop var(--cds-dur-slow) var(--cds-ease-out) both; } }
+.fb-tile { background: rgba(0,0,0,.32); border: 1px solid rgba(255,255,255,.07); border-radius: var(--fb-r); padding: .85rem .9rem; display: grid; gap: .2rem; text-align: center; }
+.fb-tile-k { font-size: var(--cds-font-size-caption); color: var(--fb-board-dim); }
+.fb-tile-v { font-weight: 700; font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.05; color: var(--fb-led); text-shadow: 0 0 14px color-mix(in srgb, var(--fb-led) 40%, transparent); font-variant-numeric: tabular-nums; }
+
+/* ---- pill tabs ---- */
+.fb-tabs { display: flex; gap: .35rem; overflow-x: auto; padding: .35rem; background: color-mix(in srgb, var(--color-fg) 5%, var(--color-panel)); border: 1px solid var(--color-border-line); border-radius: 999px; justify-self: start; max-width: 100%; }
+.fb-tab { font-size: var(--cds-font-size-body); font-weight: 500; background: none; border: 0; border-radius: 999px; padding: .45rem 1rem; color: var(--color-fg-muted); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: .4rem; transition: background var(--cds-dur-slow), color var(--cds-dur-slow); }
+.fb-tab:hover { color: var(--color-fg); background: color-mix(in srgb, var(--color-fg) 6%, transparent); }
+.fb-tab[aria-selected="true"] { color: #fff; background: var(--fb-ball); box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--fb-ball) 70%, transparent); }
+.fb-tab:focus-visible, .fb-sort:focus-visible { outline: 2px solid var(--fb-ball); outline-offset: 2px; }
+
+/* ---- cards ---- */
+.fb-page { display: grid; gap: var(--cds-gap-lg); }
+.fb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-lg); }
+.fb-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--fb-r); padding: clamp(1rem, 2.4vw, 1.5rem); display: grid; gap: .7rem; align-content: start; min-width: 0; box-shadow: var(--fb-shadow); }
+.fb-card-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--cds-gap-sm) var(--cds-gap-md); }
+.fb-card-title { display: grid; gap: .35rem; justify-items: start; }
+.fb-card h2 { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.fb-kicker { font-size: .72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--fb-ball); background: var(--fb-ball-soft); border-radius: 999px; padding: .15rem .6rem; justify-self: start; }
+.fb-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.6; max-width: 75ch; }
+.fb-scroll { overflow: auto; max-height: 38rem; border-radius: 12px; }
+
+/* ---- tables with rank badges ---- */
+.fb-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.fb-table th { position: sticky; top: 0; z-index: 1; background: var(--color-panel); color: var(--color-fg-muted); font-weight: 600; padding: .5rem .4rem; border-bottom: 2px solid var(--fb-wood-line); white-space: nowrap; text-align: center; }
+.fb-table td { padding: .3rem .3rem; border-bottom: 1px dashed var(--color-border-line); white-space: nowrap; text-align: center; }
+.fb-table tbody tr:last-child td { border-bottom: 0; }
+.fb-table tbody tr:hover td { background: color-mix(in srgb, var(--fb-ball) 6%, var(--color-panel)); }
+.fb-table .fb-name { text-align: left; position: sticky; left: 0; background: var(--color-panel); padding-left: .6rem; font-weight: 500; }
+.fb-table th.fb-name { z-index: 2; }
+.fb-table tr.fb-me td { background: color-mix(in srgb, var(--fb-ball) 9%, var(--color-panel)); }
+.fb-table tr.fb-me td.fb-name { font-weight: 700; color: var(--fb-ball); }
+.fb-table tr.fb-live td:first-child::after { content: "LIVE"; margin-left: .35rem; font-size: .62rem; font-weight: 700; color: #fff; background: var(--fb-ball); border-radius: 999px; padding: .05rem .35rem; vertical-align: .1em; }
+.fb-rk { display: inline-block; min-width: 2.1rem; padding: .22rem .5rem; border-radius: 999px; font-weight: 600; }
+.fb-table td.fb-won { font-weight: 700; color: var(--color-fg); }
+#league-table .fb-rk, #league-table td.fb-won .fb-rk, #league-table .fb-name { font-weight: 400; }
+.fb-sort { font: inherit; color: inherit; background: none; border: 0; padding: .1rem .3rem; border-radius: 999px; cursor: pointer; }
+.fb-sort:hover { background: var(--fb-ball-soft); }
+.fb-res { display: inline-block; min-width: 2em; border-radius: 999px; padding: .1rem .55em; font-weight: 700; }
+.fb-res-W, .fb-edge-我方 { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 15%, transparent); }
+.fb-res-L, .fb-edge-對手 { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 15%, transparent); }
+.fb-res-T, .fb-edge-均勢 { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 15%, transparent); }
+
+/* ---- charts ---- */
+.fb-chart { position: relative; min-width: 0; }
+.fb-chart svg { display: block; overflow: visible; }
+.fb-chart text { fill: var(--color-fg-muted); font-size: var(--cds-font-size-caption); font-family: var(--fb-font); }
+.fb-chart .fb-strong { fill: var(--color-fg); font-weight: 600; }
+.fb-multi { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); gap: var(--cds-gap-md); }
+.fb-mini { background: color-mix(in srgb, var(--fb-wood) 45%, var(--color-panel)); border-radius: 14px; padding: .6rem .75rem .4rem; display: grid; gap: .2rem; }
+.fb-mini h3 { margin: 0; font-size: .95rem; font-weight: 600; }
+.fb-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fb-legend span::before { content: ""; display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .35rem; background: var(--sw); vertical-align: -.05em; }
+.fb-tip { position: absolute; z-index: 3; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: 12px; box-shadow: var(--cds-shadow-popover); padding: .35rem .6rem; font-size: var(--cds-font-size-caption); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fb-tip-h { color: var(--cds-text-secondary); }
+.fb-sum { margin: 0; font-size: var(--cds-font-size-body); line-height: 1.6; }
+
+/* ---- matchup card ---- */
+.fb-vs { position: relative; overflow: hidden; isolation: isolate; background: var(--fb-board); color: var(--fb-board-fg); border-radius: var(--fb-r); padding: clamp(1rem, 3vw, 1.6rem); display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--cds-gap-md); }
+.fb-vs::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, color-mix(in srgb, var(--fb-ball) 34%, transparent), transparent 42%, transparent 58%, color-mix(in srgb, var(--fb-away) 34%, transparent)); }
+.fb-vs-side { display: grid; gap: .25rem; min-width: 0; }
+.fb-vs-side:last-of-type { text-align: right; }
+.fb-vs-role { justify-self: start; font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: .1rem .55rem; background: var(--fb-ball); color: #fff; }
+.fb-vs-side:last-of-type .fb-vs-role { justify-self: end; background: var(--fb-away); }
+.fb-vs-name { font-weight: 600; font-size: 1.15rem; overflow-wrap: anywhere; }
+.fb-vs-score { display: flex; align-items: center; gap: .7rem; font-weight: 700; font-size: clamp(2.4rem, 8vw, 3.6rem); line-height: 1; color: var(--fb-led); text-shadow: 0 0 14px color-mix(in srgb, var(--fb-led) 40%, transparent); font-variant-numeric: tabular-nums; }
+.fb-vs-score i { font-style: normal; font-size: .38em; color: var(--fb-board-dim); text-shadow: none; border: 1.5px solid rgba(255,255,255,.2); border-radius: 999px; padding: .2rem .5rem; }
+.fb-vs-foot { grid-column: 1 / -1; text-align: center; font-size: var(--cds-font-size-caption); color: var(--fb-board-dim); }
+@media (max-width: 30rem) { .fb-vs { grid-template-columns: 1fr; text-align: center; } .fb-vs-side, .fb-vs-side:last-of-type { text-align: center; } .fb-vs-role, .fb-vs-side:last-of-type .fb-vs-role { justify-self: center; } .fb-vs-score { justify-content: center; } }
+
+.fb-prob { display: inline-grid; grid-template-columns: 3.2rem 2.6rem; align-items: center; gap: .4rem; }
+.fb-prob-bar { height: .45rem; border-radius: 999px; background: color-mix(in srgb, var(--color-fg) 10%, transparent); overflow: hidden; }
+.fb-prob-bar span { display: block; height: 100%; border-radius: 999px; }
+.fb-verdict-贏 { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 15%, transparent); }
+.fb-verdict-輸 { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 15%, transparent); }
+.fb-verdict-拉鋸 { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 15%, transparent); }
+.fb-status { display: inline-block; font-size: .7rem; font-weight: 700; border-radius: 999px; padding: .05rem .45rem; color: #fff; background: var(--color-bad); }
+.fb-status-q { background: var(--color-warn); }
+.fb-table tr.fb-out td { opacity: .5; }
+.fb-empty { margin: 0; padding: 1.2rem; text-align: center; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); background: color-mix(in srgb, var(--fb-wood) 40%, var(--color-panel)); border-radius: 14px; }
+/* ---- PIN-locked tabs ---- */
+.fb-tab-locked { color: color-mix(in srgb, var(--color-fg-muted) 80%, transparent); }
+.fb-lock { width: .95em; height: .95em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.fb-tab[data-tip] { position: relative; }
+.fb-tab[data-tip]::after { content: attr(data-tip); position: absolute; z-index: 5; top: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(-4px); opacity: 0; pointer-events: none; white-space: nowrap;
+  font-size: var(--cds-font-size-caption); font-weight: 600; color: var(--fb-led); background: var(--fb-board); border-radius: 999px; padding: .3rem .8rem; box-shadow: var(--fb-shadow); transition: opacity var(--cds-dur-slow), transform var(--cds-dur-slow); }
+.fb-tab[data-tip]:hover::after, .fb-tab[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%); }
+@media (min-width: 40rem) { .fb-tabs { overflow: visible; } }
+.fb-lock-panel { min-height: 14rem; display: grid; place-content: center; justify-items: center; gap: .8rem; text-align: center; border-radius: 16px; border: 2px dashed var(--fb-wood-line); background: color-mix(in srgb, var(--fb-wood) 45%, var(--color-panel)); color: var(--color-fg-muted); }
+.fb-lock-panel .fb-lock { width: 3rem; height: 3rem; color: var(--fb-ball); stroke-width: 2; }
+.fb-lock-panel span { font-size: 1.2rem; font-weight: 600; color: var(--color-fg); }
+.fb-pin-field { display: grid; gap: .4rem; font-size: var(--cds-font-size-caption); }
+.fb-pin-field input { font: inherit; font-size: 1.1rem; text-align: center; letter-spacing: .2em; width: 12rem; max-width: 100%; padding: .5rem .8rem; border-radius: 999px; border: 2px solid var(--fb-wood-line); background: var(--color-panel); color: var(--color-fg); }
+.fb-pin-field input:focus-visible, .fb-pin-btn:focus-visible { outline: 2px solid var(--fb-ball); outline-offset: 2px; }
+.fb-pin-btn { font: inherit; font-weight: 600; color: #fff; background: var(--fb-ball); border: 0; border-radius: 999px; padding: .45rem 1.4rem; cursor: pointer; }
+.fb-pin-msg { margin: 0; min-height: 1.2em; font-size: var(--cds-font-size-caption); color: var(--color-bad); }
+.fb-fail { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 6rem; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.fb-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+.fb [data-dash-source-state="empty"] { color: transparent; }
+.fb [data-dash-source-state="refreshing"] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+@media (prefers-reduced-motion: no-preference) {
+  .fb-tile-v { animation: fb-pop var(--cds-dur-slow) var(--cds-ease-out) both; }
+  @keyframes fb-pop { from { opacity: .3; transform: scale(.92); } to { opacity: 1; transform: none; } }
+}
+</style>
+
+<div class="fb">
+  <header class="fb-board" id="board">
+    <svg class="fb-court" viewBox="0 0 1000 300" preserveAspectRatio="xMaxYMid slice" aria-hidden="true">
+      <line x1="1000" y1="0" x2="1000" y2="300"/>
+      <circle cx="1000" cy="150" r="60"/>
+      <rect x="0" y="90" width="190" height="120"/>
+      <circle cx="190" cy="150" r="60"/>
+      <path d="M0 22 H140 A238 238 0 0 1 140 278 H0"/>
+      <circle cx="40" cy="150" r="9"/>
+    </svg>
+    <div class="fb-board-main">
+      <div class="fb-board-top">
+        <span class="fb-eyebrow" id="league-name" data-source="categories">
+          <svg class="fb-ballicon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M1 12h22M12 1v22M4.2 4.2c3.6 3.6 3.6 12 0 15.6M19.8 4.2c-3.6 3.6-3.6 12 0 15.6"/></svg>
+          <span id="league-label"></span>
+        </span>
+        <span class="fb-weekpill" id="week-pill" data-source="weekly"></span>
+      </div>
+      <h1 class="fb-title" id="title"><small>Fantasy 籃球戰績</small><span id="team-title" data-source="season" data-field="team_name"></span></h1>
+      <p class="fb-take dash-skeleton" id="takeaway" data-source="season"></p>
+      <p class="fb-note-led" id="sample-note" hidden>目前顯示的是範例資料，接上 Yahoo 之後會換成兩個聯盟的真實數據。</p>
+      <p class="fb-note-led" id="empty-note" data-source="weekly" hidden></p>
+      <div class="fb-bar">
+        <label class="fb-field">聯盟<select id="pick-league" data-source="categories"></select></label>
+        <label class="fb-field">隊伍<select id="pick-team" data-source="season"></select></label>
+      </div>
+    </div>
+    <div class="fb-side">
+      <div class="fb-core" id="core" data-source="roster" aria-label="核心球員" hidden></div>
+      <div class="fb-tiles" id="tiles">
+        <div class="fb-tile"><span class="fb-tile-k">戰績 W-L-T</span><span class="fb-tile-v dash-skeleton" id="tile-record" data-source="season" data-field="record"></span></div>
+        <div class="fb-tile"><span class="fb-tile-k">聯盟排名</span><span class="fb-tile-v dash-skeleton" id="tile-standing" data-source="season" data-field="standing"></span></div>
+      </div>
+    </div>
+  </header>
+  <nav class="fb-tabs" role="tablist" aria-label="分頁">
+    <button class="fb-tab" role="tab" id="tab-league" data-tab="league">聯盟數據</button>
+    <button class="fb-tab" role="tab" id="tab-season" data-tab="season">整季分析</button>
+    <button class="fb-tab" role="tab" id="tab-roster" data-tab="roster">陣容</button>
+    <button class="fb-tab fb-tab-locked" role="tab" id="tab-rising" data-tab="rising" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Rising Stars</button>
+    <button class="fb-tab fb-tab-locked" role="tab" id="tab-stream" data-tab="stream" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Streaming</button>
+    <button class="fb-tab fb-tab-locked" role="tab" id="tab-live" data-tab="live" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>本週戰況</button>
+    <button class="fb-tab fb-tab-locked" role="tab" id="tab-next" data-tab="next" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>下週對手</button>
+  </nav>
+
+  <section class="fb-page" id="pin" data-page="pin" hidden>
+    <div class="fb-card">
+      <div class="fb-lock-panel" id="pin-form">
+        <svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <span>Lony's Secret hehe</span>
+        <label class="fb-pin-field">輸入 PIN 解鎖<input id="pin-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <button type="button" class="fb-pin-btn" id="pin-btn">解鎖</button>
+        <p class="fb-pin-msg" id="pin-msg" role="status"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="fb-page" id="roster" data-page="roster" hidden>
+    <div class="fb-card" id="roster-card">
+      <div class="fb-card-title"><span class="fb-kicker">Roster</span><h2>目前陣容・<span id="roster-team"></span></h2></div>
+      <div class="fb-legend-bands" aria-label="顏色說明">
+        <span class="fb-band fb-band-A">前 10%</span><span class="fb-band fb-band-B">前 10–20%</span><span class="fb-band fb-band-C">前 20–30%</span>
+        <span class="fb-band fb-band-z">後 20–30%</span><span class="fb-band fb-band-y">後 10–20%</span><span class="fb-band fb-band-x">後 10%</span>
+      </div>
+      <p class="fb-note" id="roster-basis"></p>
+      <div class="fb-scroll"><table class="fb-table" id="roster-table" data-source="roster" data-row-key="team_key,player"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="fb-page" id="rising" data-page="rising" hidden>
+    <div class="fb-card" id="rising-card">
+      <div class="fb-card-title"><span class="fb-kicker">Waiver wire</span><h2>Rising Stars</h2></div>
+      <p class="fb-sum">這個聯盟還沒被撿走、符合下面任一項的球員，符合越多項排越前面。</p>
+      <ul class="fb-criteria">
+        <li><span class="fb-flag fb-flag-H">近況火熱</span><span>近 7 天場均在自由市場前 15 名</span></li>
+        <li><span class="fb-flag fb-flag-A">熱門 add</span><span>Yahoo 全站最常被加入的前 50 名</span></li>
+        <li><span class="fb-flag fb-flag-G">上一場爆發</span><span>本季最近一場（上場 15 分鐘以上）在候選人前 30%</span></li>
+      </ul>
+      <p class="fb-note">逐場數據來自 Yahoo Sports 的球員比賽記錄。</p>
+      <p class="fb-empty" id="rising-empty" hidden>這個聯盟目前沒有符合條件的自由球員。</p>
+    </div>
+    <div class="fb-rising" id="rising-list" data-vault="rising"></div>
+  </section>
+
+  <section class="fb-page" id="stream" data-page="stream" hidden>
+    <div class="fb-card" id="stream-card">
+      <div class="fb-card-head">
+        <div class="fb-card-title"><span class="fb-kicker">Streaming</span><h2>洗人數規劃</h2></div>
+        <div class="fb-seg" role="group" aria-label="期間">
+          <button type="button" class="fb-seg-btn" id="stream-this" data-period="this">本週剩下</button>
+          <button type="button" class="fb-seg-btn" id="stream-next" data-period="next">下週</button>
+        </div>
+      </div>
+      <div class="fb-stream-tiles" id="stream-tiles" data-vault="streaming"></div>
+      <p class="fb-note">每天依位置排最強的先發；O、INJ 和傷兵名單不算。空位是那天沒有人能填的先發格，板凳是有比賽卻排不進先發的人。</p>
+    </div>
+    <div class="fb-card" id="stream-cal-card">
+      <div class="fb-card-title"><span class="fb-kicker">Calendar</span><h2>每天的先發與空位</h2></div>
+      <div class="fb-legend-bands"><span class="fb-cal fb-cal-S">先發</span><span class="fb-cal fb-cal-B">板凳</span><span class="fb-cal fb-cal-X">受傷</span><span class="fb-cal fb-cal-none">沒比賽</span></div>
+      <div class="fb-scroll"><table class="fb-table" id="stream-cal" data-vault="streaming"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+    </div>
+    <div class="fb-card" id="stream-recs-card">
+      <div class="fb-card-title"><span class="fb-kicker">Streamers</span><h2>推薦拿來洗的球員</h2></div>
+      <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉你名單上的每一位，列出能讓你多打最多場先發的組合；同樣多場時，比他的綜合數據。</p>
+      <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-vault="streaming" data-row-key="league_id,period,key"><thead></thead><tbody></tbody></table></div>
+      <p class="fb-empty" id="stream-recs-empty" hidden>這段期間沒有能讓你多打場次的自由球員，先發格已經排滿了。</p>
+    </div>
+  </section>
+
+  <section class="fb-page" id="live" data-page="live" hidden>
+    <div class="fb-card" id="live-card">
+      <span class="fb-kicker">Live game</span>
+      <h2>第 <span id="live-week" data-vault="live_match" data-field="week">—</span> 週戰況</h2>
+      <div class="fb-vs" id="live-vs" data-vault="live_match">
+        <div class="fb-vs-side"><span class="fb-vs-role">Home</span><span class="fb-vs-name" id="live-me" data-vault="live_match" data-field="me_name">—</span></div>
+        <div class="fb-vs-score" aria-label="目前贏項比數"><span id="live-now-w" data-vault="live_match" data-field="now_w">—</span><i>VS</i><span id="live-now-l" data-vault="live_match" data-field="now_l">—</span></div>
+        <div class="fb-vs-side"><span class="fb-vs-role">Away</span><span class="fb-vs-name" id="live-opp" data-vault="live_match" data-field="opp_name">—</span></div>
+        <div class="fb-vs-foot" id="live-foot" data-vault="live_match"></div>
+      </div>
+      <p class="fb-note" id="live-note">中間是目前的贏項比數。預估 = 目前累積 + 每位球員剩餘場次 × 場均數據；場均用本季平均，並依出賽場數混入上季平均（開季樣本少時多參考上季）。標示 O、INJ 或放在傷兵名單的球員不計，GTD/DTD 照算。每天依位置排出最強先發。本分頁只分析你自己的對戰。</p>
+    </div>
+    <div class="fb-card" id="live-cats-card">
+      <span class="fb-kicker">Box score</span>
+      <h2>各類別：目前 → 週末預估</h2>
+      <p class="fb-note">勝率 65% 以上算「贏」、35% 以下算「輸」，中間是「拉鋸」，最值得補強。</p>
+      <div class="fb-scroll"><table class="fb-table" id="live-cats" data-vault="live_cats" data-row-key="league_id,cat"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="fb-grid">
+      <div class="fb-card" id="live-recs-card">
+        <span class="fb-kicker">Free agents</span>
+        <h2>可以補的人</h2>
+        <p class="fb-note">試算自由市場前 75 名球員，每人搭配丟掉你名單上的每一位，列出期望贏項增加最多的組合。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
+        <div class="fb-scroll"><table class="fb-table" id="live-recs" data-vault="live_recs" data-row-key="league_id,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <p class="fb-empty" id="live-recs-empty" hidden>目前沒有能明顯提升本週戰況的自由球員。</p>
+      </div>
+      <div class="fb-card" id="live-bench-card">
+        <span class="fb-kicker">Bench</span>
+        <h2>建議坐板凳</h2>
+        <p class="fb-note">某天讓某位球員坐板凳、反而能多贏一點的情況，例如保護 FG%、TO 或 PF。</p>
+        <div class="fb-scroll"><table class="fb-table" id="live-bench" data-vault="live_recs" data-row-key="league_id,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <p class="fb-empty" id="live-bench-empty" hidden>這週沒有需要刻意坐板凳的球員，有比賽就讓他們上。</p>
+      </div>
+    </div>
+    <div class="fb-grid">
+      <div class="fb-card" id="live-me-card">
+        <span class="fb-kicker">Home roster</span>
+        <h2>我方名單</h2>
+        <p class="fb-note">「預估先發」是剩下的日子裡，依位置排最強 10 人先發時他會上場幾場；0 場代表有比賽但排不進先發。</p>
+        <div class="fb-scroll"><table class="fb-table" id="live-me-table" data-vault="live_players" data-row-key="league_id,side,player"><thead></thead><tbody></tbody></table></div>
+      </div>
+      <div class="fb-card" id="live-opp-card">
+        <span class="fb-kicker">Away roster</span>
+        <h2>對手名單</h2>
+        <div class="fb-scroll"><table class="fb-table" id="live-opp-table" data-vault="live_players" data-row-key="league_id,side,player"><thead></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="fb-page" id="league" data-page="league" hidden>
+    <div class="fb-card" id="league-card">
+      <div class="fb-card-head">
+        <div class="fb-card-title"><span class="fb-kicker">Box score</span><h2>全聯盟單週數據</h2></div>
+        <label class="fb-field">週次<select id="pick-week" data-source="ranks"></select></label>
+      </div>
+      <div class="fb-legend-bands" aria-label="顏色說明">
+        <span class="fb-band fb-band-r1">前 3 名</span><span class="fb-band fb-band-r2">第 4–6 名</span>
+        <span class="fb-band fb-band-g2">倒數 4–6 名</span><span class="fb-band fb-band-g1">倒數 3 名</span>
+      </div>
+      <p class="fb-note">顏色是這一週該類別在聯盟 14 隊中的名次，中間不上色；TO、PF 越少名次越前面。點欄位標題可排序。</p>
+      <div class="fb-scroll"><table class="fb-table" id="league-table" data-source="weekly" data-row-key="week,team_key"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="fb-card" id="heatmap-card">
+      <div class="fb-card-head">
+        <div class="fb-card-title"><span class="fb-kicker">Weekly ranks</span><h2>逐項排名</h2></div>
+        <label class="fb-field">玩家<select id="pick-rank-team" data-source="season"></select></label>
+      </div>
+      <div class="fb-legend-bands" aria-label="顏色說明">
+        <span class="fb-band fb-band-r1">前 3 名</span><span class="fb-band fb-band-r2">第 4–6 名</span>
+        <span class="fb-band fb-band-g2">倒數 4–6 名</span><span class="fb-band fb-band-g1">倒數 3 名</span>
+      </div>
+      <p class="fb-note">數字是該週在聯盟 14 隊中的名次，1 最好，中間不上色。TO、PF 越少名次越前面。標示 LIVE 的是還在進行中的週。</p>
+      <div class="fb-scroll"><table class="fb-table" id="heatmap" data-source="ranks" data-row-key="week,team_key"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="fb-page" id="season" data-page="season" hidden>
+    <div class="fb-grid">
+      <div class="fb-card" id="radar-card">
+        <span class="fb-kicker">Shot chart</span>
+        <h2>隊伍輪廓</h2>
+        <p class="fb-note">整季各類別平均名次，越靠外圈越好。虛線是聯盟中間值。</p>
+        <div class="fb-chart dash-skeleton" id="radar" data-source="season" style="min-height: 18rem;"></div>
+      </div>
+      <div class="fb-card" id="splits-card">
+        <span class="fb-kicker">Clutch factors</span>
+        <h2>哪些類別決定勝負</h2>
+        <p class="fb-note">比較贏的週和輸的週，各類別平均拿第幾名。兩點差越遠，這個類別跟勝負越有關。右側是這個類別對上當週對手的勝率。</p>
+        <div class="fb-legend"><span style="--sw: var(--color-ok);">贏的週</span><span style="--sw: var(--color-bad);">輸的週</span></div>
+        <div class="fb-chart dash-skeleton" id="splits" data-source="splits" style="min-height: 18rem;"></div>
+      </div>
+    </div>
+    <div class="fb-card" id="trend-card">
+      <span class="fb-kicker">Trends</span>
+      <h2>各類別名次走勢</h2>
+      <p class="fb-note">每週名次，越上面越好。虛線是聯盟中間值。</p>
+      <div class="fb-multi dash-skeleton" id="trends" data-source="ranks" style="min-height: 10rem;"></div>
+    </div>
+    <div class="fb-card" id="season-card">
+      <span class="fb-kicker">Standings</span>
+      <h2>全聯盟整季平均名次</h2>
+      <p class="fb-note">只算已完賽的週。點欄位標題可排序。</p>
+      <div class="fb-scroll"><table class="fb-table" id="season-table" data-source="season" data-row-key="team_key"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="fb-page" id="next" data-page="next" hidden>
+    <div class="fb-card" id="next-card">
+      <span class="fb-kicker">Game preview</span>
+      <h2>第 <span id="next-week" data-source="preview" data-field="week">—</span> 週對戰預估</h2>
+      <div class="fb-vs" id="next-vs" data-source="preview">
+        <div class="fb-vs-side"><span class="fb-vs-role">Home</span><span class="fb-vs-name" id="vs-me"></span></div>
+        <div class="fb-vs-score" aria-label="預估優勢類別數"><span id="vs-me-n">—</span><i>VS</i><span id="vs-opp-n">—</span></div>
+        <div class="fb-vs-side"><span class="fb-vs-role">Away</span><span class="fb-vs-name" id="next-opp" data-source="preview" data-field="opp_name">—</span></div>
+        <div class="fb-vs-foot" id="next-sum" data-source="preview"></div>
+      </div>
+      <p class="fb-note">比分是預估占優勢的類別數。預估用整季平均名次和最近 3 週平均名次各占一半，差距 1.5 名以上算優勢或劣勢。</p>
+      <div class="fb-scroll"><table class="fb-table" id="next-table" data-source="preview" data-row-key="team_key,cat"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="fb-card" id="next-sim-card">
+      <span class="fb-kicker">Simulation</span>
+      <h2>整季數據模擬</h2>
+      <p class="fb-sum" data-source="h2h">如果整季每週都對上這位對手：<span id="nsim-w" data-source="h2h" data-field="w">—</span> 勝
+        <span id="nsim-l" data-source="h2h" data-field="l">—</span> 敗
+        <span id="nsim-t" data-source="h2h" data-field="t">—</span> 和。</p>
+    </div>
+  </section>
+</div>
+
+<script>
+dash.calc('ranks', {
+  inputs: ['weekly', 'categories'],
+  title: '每週各類別排名',
+  description: '每週把同聯盟各隊的每個類別排名，1 最好；TO、PF 越少名次越前面，同分同名次。',
+  fn: (weekly, categories) => {
+    const out = [];
+    const groups = {};
+    for (const r of weekly) if (r.status !== 'preevent') (groups[r.league_id + '|' + r.week] ??= []).push(r);
+    for (const rows of Object.values(groups)) {
+      const cats = categories.filter((c) => c.league_id === rows[0].league_id);
+      for (const r of rows) {
+        const o = { league_id: r.league_id, week: r.week, status: r.status, team_key: r.team_key, team_name: r.team_name, result: r.result, cat_w: r.cat_w };
+        for (const c of cats) {
+          const v = r[c.name];
+          o[c.name] = v == null ? null : 1 + rows.filter((x) => x[c.name] != null && (c.higher_better ? x[c.name] > v : x[c.name] < v)).length;
+        }
+        out.push(o);
+      }
+    }
+    return out;
+  },
+});
+
+dash.calc('season', {
+  inputs: ['ranks', 'weekly', 'categories'],
+  title: '整季平均',
+  description: '每隊已完賽各週的勝敗、各類別平均名次和平均數值；聯盟排名依勝率，同勝率比贏下的類別總數。',
+  fn: (ranks, weekly, categories) => {
+    const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+    const raw = {};
+    const teams = {};
+    for (const r of weekly) { raw[r.week + '|' + r.team_key] = r; teams[r.team_key] ??= r; }
+    const rows = Object.values(teams).map((t) => {
+      const done = ranks.filter((r) => r.team_key === t.team_key && r.status === 'postevent');
+      const count = (x) => done.filter((r) => r.result === x).length;
+      const o = { league_id: t.league_id, team_key: t.team_key, team_name: t.team_name, is_me: t.is_me, weeks: done.length, w: count('W'), l: count('L'), t: count('T') };
+      o.record = `${o.w}-${o.l}-${o.t}`;
+      const avgs = [];
+      for (const c of categories.filter((c) => c.league_id === t.league_id)) {
+        o[c.name] = mean(done.map((r) => r[c.name]).filter((v) => v != null));
+        o[c.name + ' 平均值'] = mean(done.map((r) => raw[r.week + '|' + r.team_key][c.name]).filter((v) => v != null));
+        if (o[c.name] != null) avgs.push(o[c.name]);
+      }
+      o.overall = mean(avgs);
+      o.cat_w_total = done.reduce((s, r) => s + (r.cat_w || 0), 0);
+      return o;
+    });
+    const pct = (x) => (x.weeks ? (x.w + x.t / 2) / x.weeks : 0);
+    for (const r of rows) {
+      const peers = rows.filter((x) => x.league_id === r.league_id);
+      r.standing = 1 + peers.filter((x) => pct(x) > pct(r) || (pct(x) === pct(r) && x.cat_w_total > r.cat_w_total)).length;
+    }
+    return rows;
+  },
+});
+
+dash.calc('recent', {
+  inputs: ['ranks', 'categories'],
+  title: '最近 3 週平均',
+  description: '每隊最近 3 個已完賽週的各類別平均名次。',
+  fn: (ranks, categories) => {
+    const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+    const out = [];
+    for (const key of new Set(ranks.map((r) => r.team_key))) {
+      const done = ranks.filter((r) => r.team_key === key && r.status === 'postevent').sort((a, b) => b.week - a.week).slice(0, 3);
+      if (!done.length) continue;
+      const o = { league_id: done[0].league_id, team_key: key, weeks: done.map((r) => r.week).join(',') };
+      for (const c of categories.filter((c) => c.league_id === o.league_id)) o[c.name] = mean(done.map((r) => r[c.name]).filter((v) => v != null));
+      out.push(o);
+    }
+    return out;
+  },
+});
+
+dash.calc('splits', {
+  inputs: ['weekly', 'ranks', 'categories'],
+  title: '贏週與輸週的類別表現',
+  description: '每隊每個類別：對上當週對手的勝負次數與勝率（和局算半場），以及在贏的週、輸的週各自的平均名次。',
+  fn: (weekly, ranks, categories) => {
+    const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+    const at = {};
+    for (const r of weekly) at[r.week + '|' + r.team_key] = r;
+    const rk = {};
+    for (const r of ranks) rk[r.week + '|' + r.team_key] = r;
+    const out = [];
+    for (const key of new Set(weekly.map((r) => r.team_key))) {
+      const done = weekly.filter((r) => r.team_key === key && r.status === 'postevent');
+      if (!done.length) continue;
+      for (const c of categories.filter((c) => c.league_id === done[0].league_id)) {
+        let won = 0, lost = 0, tied = 0;
+        for (const r of done) {
+          const me = r[c.name];
+          const opp = at[r.week + '|' + r.opp_key]?.[c.name];
+          if (me == null || opp == null) continue;
+          if (me === opp) tied++;
+          else if ((me > opp) === c.higher_better) won++;
+          else lost++;
+        }
+        const rankIn = (res) => mean(done.filter((r) => r.result === res).map((r) => rk[r.week + '|' + key]?.[c.name]).filter((v) => v != null));
+        const n = won + lost + tied;
+        out.push({ league_id: c.league_id, team_key: key, cat: c.name, order: c.order, won, lost, tied, win_rate: n ? (won + tied / 2) / n : null, rank_in_w: rankIn('W'), rank_in_l: rankIn('L') });
+      }
+    }
+    return out;
+  },
+});
+
+dash.calc('h2h', {
+  inputs: ['weekly', 'categories'],
+  title: '兩隊模擬對戰',
+  description: '同聯盟任兩隊，用每個已完賽週的數據直接比較，贏的類別多就算那週贏。',
+  fn: (weekly, categories) => {
+    const out = [];
+    const done = weekly.filter((r) => r.status === 'postevent');
+    for (const lid of new Set(done.map((r) => r.league_id))) {
+      const cats = categories.filter((c) => c.league_id === lid);
+      const rows = done.filter((r) => r.league_id === lid);
+      const at = {};
+      for (const r of rows) at[r.week + '|' + r.team_key] = r;
+      const teams = [...new Set(rows.map((r) => r.team_key))];
+      const weeks = [...new Set(rows.map((r) => r.week))];
+      for (const a of teams) for (const b of teams) {
+        if (a === b) continue;
+        const o = { league_id: lid, a_key: a, b_key: b, w: 0, l: 0, t: 0 };
+        for (const wk of weeks) {
+          const x = at[wk + '|' + a], y = at[wk + '|' + b];
+          if (!x || !y) continue;
+          let cw = 0, cl = 0;
+          for (const c of cats) {
+            if (x[c.name] == null || y[c.name] == null || x[c.name] === y[c.name]) continue;
+            if ((x[c.name] > y[c.name]) === c.higher_better) cw++; else cl++;
+          }
+          if (cw > cl) o.w++; else if (cw < cl) o.l++; else o.t++;
+        }
+        out.push(o);
+      }
+    }
+    return out;
+  },
+});
+
+dash.calc('preview', {
+  inputs: ['weekly', 'season', 'recent', 'categories'],
+  title: '下週對手預估',
+  description: '每隊下一場對手，各類別用整季平均名次和最近 3 週平均名次各半估算，差 1.5 名以上算優勢或劣勢。',
+  fn: (weekly, season, recent, categories) => {
+    const out = [];
+    const find = (rows, key) => rows.find((r) => r.team_key === key);
+    for (const key of new Set(weekly.map((r) => r.team_key))) {
+      const mine = weekly.filter((r) => r.team_key === key);
+      const next = mine.filter((r) => r.status === 'preevent').sort((a, b) => a.week - b.week)[0] || mine.find((r) => r.status === 'midevent');
+      if (!next || !next.opp_key) continue;
+      const ms = find(season, key), os = find(season, next.opp_key), mr = find(recent, key), orc = find(recent, next.opp_key);
+      for (const c of categories.filter((c) => c.league_id === next.league_id)) {
+        const blend = (s, r) => (s?.[c.name] == null ? null : r?.[c.name] == null ? s[c.name] : (s[c.name] + r[c.name]) / 2);
+        const me = blend(ms, mr), opp = blend(os, orc);
+        const diff = me == null || opp == null ? null : opp - me;
+        out.push({
+          league_id: next.league_id, team_key: key, week: next.week, opp_key: next.opp_key, opp_name: next.opp_name, cat: c.name, order: c.order,
+          me_season: ms?.[c.name] ?? null, opp_season: os?.[c.name] ?? null, me_recent: mr?.[c.name] ?? null, opp_recent: orc?.[c.name] ?? null,
+          diff, edge: diff == null ? '—' : diff >= 1.5 ? '我方' : diff <= -1.5 ? '對手' : '均勢',
+        });
+      }
+    }
+    return out;
+  },
+});
+</script>
+
+<script>
+const HOME = 'var(--fb-ball)', AWAY = 'var(--fb-away)';
+const S = { league: null, team: null, rankTeam: null, week: null, tab: 'league', sort: {} };
+const enc = encodeURIComponent;
+const $ = (id) => document.getElementById(id);
+// Rising Stars, Streaming and 本週戰況 data ship AES-encrypted in the "vault" dataset; the PIN decrypts it into PRIV.
+const LOCKED = new Set(['rising', 'stream', 'live', 'next']);
+const PRIV = {};
+let unlocked = false;
+const rowsOf = (id) => { if (PRIV[id]) return PRIV[id]; const d = dash.data(id); return d.status === 'ok' && Array.isArray(d.data) ? d.data : []; };
+const isPct = (name) => name.includes('%');
+const isRatio = (name) => name.includes('/');
+const fmtVal = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',')(v));
+const fmtAvg = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',.1f')(v));
+const fmtRank = (v) => (v == null ? '—' : d3.format('.1f')(v));
+const keyOf = (...parts) => parts.map((p) => enc(p)).join(',');
+const whereOf = (obj) => Object.entries(obj).map(([k, v]) => `${enc(k)}=${enc(v)}`).join('&');
+
+function rankBg(r, n) {
+  if (r == null) return '';
+  const t = (r - 1) / Math.max(1, n - 1);
+  const a = Math.round(8 + Math.abs(t - 0.5) * 2 * 50);
+  return `color-mix(in srgb, var(${t < 0.5 ? '--color-ok' : '--color-bad'}) ${a}%, transparent)`;
+}
+
+// Weekly rank tiers for the league tables: r1 = 1st-3rd, r2 = 4th-6th, g2 = 4th-6th from last, g1 = last three.
+function rankTier(r, n) {
+  if (r == null) return '';
+  return r <= 3 ? 'r1' : r <= 6 ? 'r2' : r > n - 3 ? 'g1' : r > n - 6 ? 'g2' : '';
+}
+
+function catsOf(lid) {
+  return rowsOf('categories').filter((c) => c.league_id === lid).sort((a, b) => a.order - b.order);
+}
+
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else e.setAttribute(k, v);
+  }
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function setSelect(sel, options, value) {
+  const want = options.map((o) => o.value + '\u0000' + o.label).join('|');
+  if (sel.dataset.opts !== want) {
+    sel.replaceChildren(...options.map((o) => new Option(o.label, o.value)));
+    sel.dataset.opts = want;
+  }
+  sel.value = value ?? '';
+}
+
+function tipFor(box) {
+  let t = box.querySelector('.fb-tip');
+  if (!t) { t = el('div', { class: 'fb-tip' }); t.hidden = true; box.append(t); }
+  return {
+    show(lines, x, y) {
+      t.replaceChildren(...lines.map((l, i) => el('div', i === 0 ? { class: 'fb-tip-h' } : {}, l)));
+      t.hidden = false;
+      const left = Math.max(0, Math.min(box.clientWidth - t.offsetWidth, x + 12));
+      t.style.left = left + 'px';
+      t.style.top = Math.max(0, y - t.offsetHeight - 10) + 'px';
+    },
+    hide() { t.hidden = true; },
+  };
+}
+
+function freshSvg(box, w, h) {
+  d3.select(box).select('svg').remove();
+  box.classList.remove('dash-skeleton');
+  const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('viewBox', `0 0 ${w} ${h}`).attr('height', h);
+  return svg;
+}
+
+function showFail(box) {
+  d3.select(box).select('svg').remove();
+  box.classList.remove('dash-skeleton');
+  if (!box.querySelector('.fb-fail')) box.prepend(el('div', { class: 'fb-fail' }, 'Failed to load'));
+}
+
+/* ---------- radar ---------- */
+function drawRadar(box, cats, series, n) {
+  const W = Math.max(260, box.clientWidth);
+  const H = Math.min(W, 380);
+  const R = H / 2 - 30;
+  const cx = W / 2, cy = H / 2;
+  const svg = freshSvg(box, W, H);
+  const tip = tipFor(box);
+  const rad = d3.scaleLinear([n, 1], [R * 0.08, R]);
+  const ang = (i) => (i / cats.length) * Math.PI * 2 - Math.PI / 2;
+  const pt = (i, v) => [cx + Math.cos(ang(i)) * rad(v), cy + Math.sin(ang(i)) * rad(v)];
+  const ring = (v) => cats.map((_, i) => pt(i, v));
+  const g = svg.append('g');
+  for (const v of [1, Math.round(n / 2), n]) {
+    g.append('polygon').attr('points', ring(v).join(' ')).style('fill', 'none').style('stroke', 'var(--cds-chart-grid)');
+  }
+  g.append('polygon').attr('points', ring((n + 1) / 2).join(' ')).style('fill', 'none').style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '4 4');
+  cats.forEach((c, i) => {
+    const [x, y] = pt(i, 1);
+    g.append('line').attr('x1', cx).attr('y1', cy).attr('x2', x).attr('y2', y).style('stroke', 'var(--cds-chart-grid)');
+    const a = ang(i);
+    const lx = cx + Math.cos(a) * (R + 14), ly = cy + Math.sin(a) * (R + 14);
+    g.append('text').attr('x', lx).attr('y', ly).attr('dy', '0.35em')
+      .attr('text-anchor', Math.abs(Math.cos(a)) < 0.2 ? 'middle' : Math.cos(a) > 0 ? 'start' : 'end').text(c.name);
+  });
+  g.append('text').attr('x', cx + 4).attr('y', cy - R - 2).attr('dy', '-0.2em').text('第 1 名');
+  series.forEach((s) => {
+    const pts = cats.map((c, i) => pt(i, s.values[c.name] ?? n));
+    g.append('polygon').attr('points', pts.join(' ')).style('fill', s.color).style('fill-opacity', 0.14).style('stroke', s.color).style('stroke-width', 2).style('stroke-linejoin', 'round');
+    cats.forEach((c, i) => {
+      g.append('circle').attr('cx', pts[i][0]).attr('cy', pts[i][1]).attr('r', 3.5).style('fill', s.color)
+        .on('mouseenter', (e) => {
+          const [mx, my] = d3.pointer(e, box);
+          tip.show([c.name, ...series.map((x) => `${x.name}：平均第 ${fmtRank(x.values[c.name])} 名`)], mx, my);
+        })
+        .on('mouseleave', () => tip.hide());
+    });
+  });
+}
+
+/* ---------- dumbbell: two values per category on a rank axis ---------- */
+function drawDumbbell(box, items, a, b, n, right) {
+  const W = Math.max(260, box.clientWidth);
+  const rowH = 28, top = 26;
+  const H = top + items.length * rowH + 6;
+  const svg = freshSvg(box, W, H);
+  const tip = tipFor(box);
+  const probe = svg.append('text').text('OREB');
+  const left = probe.node().getComputedTextLength() + 12;
+  probe.remove();
+  const rightW = right ? 56 : 8;
+  const x = d3.scaleLinear([1, n], [left, W - rightW]);
+  for (const t of [1, Math.round(n / 2), n]) {
+    svg.append('line').attr('x1', x(t)).attr('x2', x(t)).attr('y1', top - 6).attr('y2', H - 4).style('stroke', 'var(--cds-chart-grid)');
+    svg.append('text').attr('x', x(t)).attr('y', top - 12).attr('text-anchor', 'middle').text(t === 1 ? '第 1 名' : `第 ${t} 名`);
+  }
+  items.forEach((it, i) => {
+    const y = top + i * rowH + rowH / 2;
+    svg.append('text').attr('x', 0).attr('y', y).attr('dy', '0.35em').attr('class', 'fb-strong').text(it.label);
+    const va = it[a.field], vb = it[b.field];
+    if (va != null && vb != null) svg.append('line').attr('x1', x(va)).attr('x2', x(vb)).attr('y1', y).attr('y2', y).style('stroke', 'var(--cds-chart-axis)').style('stroke-width', 2);
+    for (const s of [a, b]) {
+      const v = it[s.field];
+      if (v == null) continue;
+      svg.append('circle').attr('cx', x(v)).attr('cy', y).attr('r', 5).style('fill', s.color);
+    }
+    if (right) svg.append('text').attr('x', W).attr('y', y).attr('dy', '0.35em').attr('text-anchor', 'end').text(right(it));
+    svg.append('rect').attr('x', 0).attr('y', y - rowH / 2).attr('width', W).attr('height', rowH).style('fill', 'transparent')
+      .on('mousemove', (e) => {
+        const [mx, my] = d3.pointer(e, box);
+        tip.show([it.label, `${a.name}：平均第 ${fmtRank(va)} 名`, `${b.name}：平均第 ${fmtRank(vb)} 名`, ...(it.extra ? [it.extra] : [])], mx, my);
+      })
+      .on('mouseleave', () => tip.hide());
+  });
+}
+
+/* ---------- small multiples: rank by week ---------- */
+function drawTrends(box, cats, rows, n) {
+  box.classList.remove('dash-skeleton');
+  box.replaceChildren();
+  const weeks = rows.map((r) => r.week);
+  for (const c of cats) {
+    const wrap = el('div', { class: 'fb-mini' });
+    wrap.append(el('h3', {}, c.name));
+    const chart = el('div', { class: 'fb-chart' });
+    wrap.append(chart);
+    box.append(wrap);
+    const W = Math.max(180, chart.clientWidth), H = 110, m = { t: 8, r: 26, b: 18, l: 20 };
+    const svg = freshSvg(chart, W, H);
+    const tip = tipFor(chart);
+    const x = d3.scalePoint(weeks, [m.l, W - m.r]).padding(0.2);
+    const y = d3.scaleLinear([1, n], [m.t, H - m.b]);
+    for (const t of [1, n]) {
+      svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(t)).attr('y2', y(t)).style('stroke', 'var(--cds-chart-grid)');
+      svg.append('text').attr('x', m.l - 4).attr('y', y(t)).attr('dy', '0.35em').attr('text-anchor', 'end').text(t);
+    }
+    svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y((n + 1) / 2)).attr('y2', y((n + 1) / 2)).style('stroke', 'var(--cds-chart-reference)').attr('stroke-dasharray', '3 3');
+    const pts = rows.filter((r) => r[c.name] != null);
+    const step = Math.ceil(weeks.length / Math.max(1, Math.floor((W - m.l - m.r) / 26)));
+    weeks.forEach((w, i) => { if (i % step === 0) svg.append('text').attr('x', x(w)).attr('y', H - 4).attr('text-anchor', 'middle').text(w); });
+    svg.append('path').datum(pts).attr('d', d3.line().x((r) => x(r.week)).y((r) => y(r[c.name])))
+      .style('fill', 'none').style('stroke', HOME).style('stroke-width', 2).style('stroke-linecap', 'round').style('stroke-linejoin', 'round');
+    const last = pts[pts.length - 1];
+    if (last) {
+      svg.append('circle').attr('cx', x(last.week)).attr('cy', y(last[c.name])).attr('r', 3.5).style('fill', HOME);
+      svg.append('text').attr('class', 'fb-strong').attr('x', x(last.week) + 6).attr('y', y(last[c.name])).attr('dy', '0.35em').text(last[c.name]);
+    }
+    const dot = svg.append('circle').attr('r', 4).style('fill', HOME).style('display', 'none');
+    svg.append('rect').attr('x', m.l).attr('y', 0).attr('width', W - m.l - m.r).attr('height', H).style('fill', 'transparent')
+      .on('mousemove', (e) => {
+        const [px] = d3.pointer(e);
+        const r = d3.least(pts, (p) => Math.abs(x(p.week) - px));
+        if (!r) return;
+        dot.style('display', null).attr('cx', x(r.week)).attr('cy', y(r[c.name]));
+        const [mx, my] = d3.pointer(e, chart);
+        tip.show([`第 ${r.week} 週${r.status === 'midevent' ? '（進行中）' : ''}`, `${c.name}：第 ${r[c.name]} 名`], mx, my);
+      })
+      .on('mouseleave', () => { dot.style('display', 'none'); tip.hide(); });
+  }
+}
+
+/* ---------- tables ---------- */
+function sortRows(table, rows, cols, def) {
+  const s = S.sort[table.id] || def;
+  const col = cols.find((c) => c.field === s.key) || cols[0];
+  const val = col.sortVal || ((r) => r[col.field]);
+  return [...rows].sort((a, b) => {
+    const va = val(a), vb = val(b);
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return (va < vb ? -1 : va > vb ? 1 : 0) * s.dir;
+  });
+}
+
+function drawTable(table, cols, rows, opts) {
+  const s = S.sort[table.id] || opts.sort;
+  const head = el('tr');
+  for (const c of cols) {
+    const th = el('th', { 'data-field': c.field, class: c.name ? 'fb-name' : '' });
+    if (opts.sortable) {
+      th.setAttribute('aria-sort', s.key === c.field ? (s.dir > 0 ? 'ascending' : 'descending') : 'none');
+      const btn = el('button', { class: 'fb-sort', type: 'button' }, c.label);
+      btn.addEventListener('click', () => {
+        const cur = S.sort[table.id] || opts.sort;
+        S.sort[table.id] = { key: c.field, dir: cur.key === c.field ? -cur.dir : (c.desc ? -1 : 1) };
+        render();
+      });
+      th.append(btn);
+    } else th.textContent = c.label;
+    head.append(th);
+  }
+  table.tHead.replaceChildren(head);
+  const shown = opts.sortable ? sortRows(table, rows, cols, opts.sort) : rows;
+  table.tBodies[0].replaceChildren(...shown.map((r) => {
+    const tr = el('tr', { 'data-key': opts.key(r) });
+    if (opts.rowClass) tr.className = opts.rowClass(r);
+    for (const c of cols) {
+      const td = el('td', { class: c.name ? 'fb-name' : '' });
+      const text = c.fmt ? c.fmt(r) : r[c.field] ?? '—';
+      if (c.pill) td.append(el('span', { class: `fb-res ${c.pill(r)}` }, text));
+      else if (c.chip) { const b = el('span', { class: 'fb-rk' }, text); b.style.background = c.chip(r) || ''; td.append(b); }
+      else if (c.band) { const band = c.band(r); td.append(el('span', { class: band ? `fb-rk fb-band-${band}` : 'fb-rk' }, text)); }
+      else td.textContent = text;
+      if (c.bold && c.bold(r)) td.classList.add('fb-won');
+      tr.append(td);
+    }
+    return tr;
+  }));
+}
+
+/* ---------- pages ---------- */
+function drawWeek(ctx) {
+  if (!ctx.season.some((r) => r.team_key === S.rankTeam)) S.rankTeam = S.team;
+  setSelect($('pick-rank-team'), [...ctx.season].sort((a, b) => a.team_name.localeCompare(b.team_name)).map((r) => ({ value: r.team_key, label: r.is_me ? `${r.team_name}（我）` : r.team_name })), S.rankTeam);
+  const rows = rowsOf('ranks').filter((r) => r.team_key === S.rankTeam).sort((a, b) => a.week - b.week);
+  const cols = [
+    { field: 'week', label: '週', name: true },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, band: (r) => rankTier(r[c.name], ctx.n) })),
+    { field: 'cat_w', label: '贏項' },
+    { field: 'result', label: '結果', pill: (r) => (r.result ? 'fb-res-' + r.result : '') },
+  ];
+  drawTable($('heatmap'), cols, rows, { key: (r) => keyOf(r.week, r.team_key), rowClass: (r) => (r.status === 'midevent' ? 'fb-live' : '') });
+}
+
+function drawLeague(ctx) {
+  const all = rowsOf('weekly').filter((r) => r.league_id === S.league && r.status !== 'preevent');
+  const weeks = [...new Set(all.map((r) => r.week))].sort((a, b) => a - b);
+  if (!weeks.includes(S.week)) S.week = weeks[weeks.length - 1] ?? null;
+  setSelect($('pick-week'), weeks.map((w) => ({ value: String(w), label: `第 ${w} 週` })), S.week == null ? '' : String(S.week));
+  const rows = all.filter((r) => r.week === S.week);
+  const at = Object.fromEntries(rows.map((r) => [r.team_key, r]));
+  const rk = Object.fromEntries(rowsOf('ranks').filter((r) => r.league_id === S.league && r.week === S.week).map((r) => [r.team_key, r]));
+  const won = (r, c) => {
+    const o = at[r.opp_key];
+    if (!o || r[c.name] == null || o[c.name] == null || r[c.name] === o[c.name]) return false;
+    return (r[c.name] > o[c.name]) === c.higher_better;
+  };
+  const cols = [
+    { field: 'team_name', label: '隊伍', name: true },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, desc: c.higher_better, fmt: (r) => fmtVal(c.name, r[c.name]), band: (r) => rankTier(rk[r.team_key]?.[c.name], ctx.n), bold: (r) => won(r, c) })),
+    { field: 'cat_w', label: '贏項', desc: true },
+    { field: 'result', label: '結果', pill: (r) => (r.result ? 'fb-res-' + r.result : '') },
+  ];
+  drawTable($('league-table'), cols, rows, { sortable: true, sort: { key: 'cat_w', dir: -1 }, key: (r) => keyOf(r.week, r.team_key), rowClass: (r) => (r.team_key === S.team ? 'fb-me' : '') });
+}
+
+function drawSeason(ctx) {
+  const me = ctx.season.find((r) => r.team_key === S.team);
+  if (me) drawRadar($('radar'), ctx.cats, [{ name: me.team_name, color: HOME, values: me }], ctx.n);
+  const sp = rowsOf('splits').filter((r) => r.team_key === S.team)
+    .map((r) => ({ ...r, label: r.cat, gap: r.rank_in_w != null && r.rank_in_l != null ? r.rank_in_l - r.rank_in_w : -99,
+      extra: `對上對手 ${r.won} 勝 ${r.lost} 敗 ${r.tied} 和` }))
+    .sort((a, b) => b.gap - a.gap);
+  if (!sp.some((r) => r.rank_in_w != null || r.rank_in_l != null)) { d3.select($('splits')).select('svg').remove(); $('splits').classList.remove('dash-skeleton'); }
+  else {
+    drawDumbbell($('splits'), sp, { field: 'rank_in_w', name: '贏的週', color: 'var(--color-ok)' }, { field: 'rank_in_l', name: '輸的週', color: 'var(--color-bad)' }, ctx.n,
+      (r) => (r.win_rate == null ? '—' : d3.format('.0%')(r.win_rate)));
+  }
+  const trendRows = rowsOf('ranks').filter((r) => r.team_key === S.team).sort((a, b) => a.week - b.week);
+  drawTrends($('trends'), ctx.cats, trendRows, ctx.n);
+  const cols = [
+    { field: 'team_name', label: '隊伍', name: true },
+    { field: 'record', label: '戰績', sortVal: (r) => r.standing },
+    { field: 'standing', label: '排名' },
+    { field: 'overall', label: '平均', fmt: (r) => fmtRank(r.overall), chip: (r) => rankBg(r.overall, ctx.n) },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => fmtRank(r[c.name]), chip: (r) => rankBg(r[c.name], ctx.n) })),
+  ];
+  drawTable($('season-table'), cols, ctx.season, { sortable: true, sort: { key: 'standing', dir: 1 }, key: (r) => keyOf(r.team_key), rowClass: (r) => (r.team_key === S.team ? 'fb-me' : '') });
+}
+
+function setH2h(prefix, a, b) {
+  const row = rowsOf('h2h').find((r) => r.a_key === a && r.b_key === b);
+  for (const f of ['w', 'l', 't']) {
+    const span = $(`${prefix}-${f}`);
+    span.setAttribute('data-where', whereOf({ a_key: a, b_key: b }));
+    span.textContent = row ? row[f] : '—';
+  }
+}
+
+function drawNext(ctx) {
+  const rows = rowsOf('preview').filter((r) => r.team_key === S.team).sort((a, b) => a.order - b.order);
+  const first = rows[0];
+  for (const id of ['next-week', 'next-opp']) {
+    const span = $(id);
+    if (first) span.setAttribute('data-where', whereOf({ team_key: first.team_key, cat: first.cat }));
+    span.textContent = first ? (id === 'next-week' ? first.week : first.opp_name) : '—';
+  }
+  const count = (e) => rows.filter((r) => r.edge === e).length;
+  const hasData = rows.some((r) => r.diff != null);
+  const me = ctx.season.find((r) => r.team_key === S.team);
+  $('vs-me').textContent = me ? me.team_name : '—';
+  $('vs-me-n').textContent = hasData ? count('我方') : '—';
+  $('vs-opp-n').textContent = hasData ? count('對手') : '—';
+  $('next-sum').textContent = rows.length && !hasData ? '雙方都還沒有完賽的週，開打一週後才會有預估。' : rows.length ? `均勢 ${count('均勢')} 類，共 ${rows.length} 類。` : '目前沒有排定的下一場對戰。';
+  const cols = [
+    { field: 'cat', label: '類別', name: true },
+    { field: 'me_season', label: '我方整季', fmt: (r) => fmtRank(r.me_season), chip: (r) => rankBg(r.me_season, ctx.n) },
+    { field: 'opp_season', label: '對手整季', fmt: (r) => fmtRank(r.opp_season), chip: (r) => rankBg(r.opp_season, ctx.n) },
+    { field: 'me_recent', label: '我方近 3 週', fmt: (r) => fmtRank(r.me_recent), chip: (r) => rankBg(r.me_recent, ctx.n) },
+    { field: 'opp_recent', label: '對手近 3 週', fmt: (r) => fmtRank(r.opp_recent), chip: (r) => rankBg(r.opp_recent, ctx.n) },
+    { field: 'edge', label: '預估', pill: (r) => 'fb-edge-' + r.edge },
+  ];
+  drawTable($('next-table'), cols, rows, { key: (r) => keyOf(r.team_key, r.cat) });
+  if (first) setH2h('nsim', first.team_key, first.opp_key);
+}
+
+function drawLive(ctx) {
+  const m = rowsOf('live_match').find((r) => r.league_id === S.league);
+  const where = m ? whereOf({ league_id: m.league_id }) : '';
+  for (const id of ['live-week', 'live-me', 'live-now-w', 'live-now-l', 'live-opp']) $(id).setAttribute('data-where', where);
+  $('live-week').textContent = m ? m.week : '—';
+  $('live-me').textContent = m ? m.me_name : '—';
+  $('live-opp').textContent = m ? m.opp_name : '—';
+  $('live-now-w').textContent = m ? m.now_w : '—';
+  $('live-now-l').textContent = m ? m.now_l : '—';
+  const md = (d) => d.slice(5).replace('-', '/');
+  $('live-foot').textContent = m
+    ? `${md(m.first_day)}–${md(m.last_day)}・週末預估：穩贏 ${m.proj_win} 項、拉鋸 ${m.proj_toss} 項、落後 ${m.proj_lose} 項（期望贏 ${m.exp_w} 項）・剩餘出賽 ${m.games_me} 對 ${m.games_opp} 場`
+    : '這個聯盟還沒有本週戰況資料，跟 Claude 說「更新本週戰況」就會產生。';
+
+  const pctBar = (r) => r.win_prob;
+  const cats = rowsOf('live_cats').filter((r) => r.league_id === S.league).sort((a, b) => a.order - b.order);
+  const val = (c, v, avg) => (avg ? fmtAvg(c, v) : fmtVal(c, v));
+  drawTable($('live-cats'), [
+    { field: 'cat', label: '類別', name: true },
+    { field: 'me_now', label: '我方目前', fmt: (r) => val(r.cat, r.me_now) },
+    { field: 'opp_now', label: '對手目前', fmt: (r) => val(r.cat, r.opp_now) },
+    { field: 'me_final', label: '我方預估', fmt: (r) => val(r.cat, r.me_final, true), bold: (r) => r.win_prob >= 0.5 },
+    { field: 'opp_final', label: '對手預估', fmt: (r) => val(r.cat, r.opp_final, true), bold: (r) => r.win_prob < 0.5 },
+    { field: 'win_prob', label: '勝率', fmt: (r) => d3.format('.0%')(r.win_prob) },
+    { field: 'verdict', label: '預測', pill: (r) => 'fb-verdict-' + r.verdict },
+  ], cats, { key: (r) => keyOf(r.league_id, r.cat) });
+  // probability bars drawn into the 勝率 cells
+  const probCol = 5;
+  [...$('live-cats').tBodies[0].rows].forEach((tr, i) => {
+    const r = cats[i], td = tr.cells[probCol], text = td.textContent;
+    const color = r.win_prob >= 0.65 ? 'var(--color-ok)' : r.win_prob <= 0.35 ? 'var(--color-bad)' : 'var(--color-warn)';
+    const bar = el('span', { class: 'fb-prob-bar' }); const fill = el('span'); fill.style.cssText = `width: ${Math.round(pctBar(r) * 100)}%; background: ${color};`; bar.append(fill);
+    const wrap = el('span', { class: 'fb-prob' }); wrap.append(bar, el('span', {}, text));
+    td.replaceChildren(wrap);
+  });
+
+  const recs = rowsOf('live_recs').filter((r) => r.league_id === S.league);
+  const adds = recs.filter((r) => r.kind === 'add').sort((a, b) => a.rank - b.rank);
+  $('live-recs-empty').hidden = adds.length > 0;
+  $('live-recs').hidden = !adds.length;
+  drawTable($('live-recs'), [
+    { field: 'player', label: '補進', name: true },
+    { field: 'nba_team', label: '球隊' },
+    { field: 'availability', label: '可撿' },
+    { field: 'drop', label: '丟掉' },
+    { field: 'games_left', label: '本週可上', fmt: (r) => `${r.games_left} 場` },
+    { field: 'gain', label: '期望贏項', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
+    { field: 'flips', label: '翻盤類別', fmt: (r) => r.flips ? r.flips.split(' ').map((f) => (f[0] === '+' ? '轉贏 ' : '轉輸 ') + f.slice(1)).join('、') : '—' },
+  ], adds, { key: (r) => keyOf(r.league_id, r.kind, r.rank) });
+
+  const bench = recs.filter((r) => r.kind === 'bench').sort((a, b) => a.rank - b.rank);
+  $('live-bench-empty').hidden = bench.length > 0;
+  $('live-bench').hidden = !bench.length;
+  drawTable($('live-bench'), [
+    { field: 'date', label: '日期', name: true, fmt: (r) => (r.date ? md(r.date) : '—') },
+    { field: 'player', label: '坐板凳' },
+    { field: 'gain', label: '期望贏項', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
+  ], bench, { key: (r) => keyOf(r.league_id, r.kind, r.rank) });
+
+  const roster = (side) => rowsOf('live_players').filter((r) => r.league_id === S.league && r.side === side);
+  const rcols = [
+    { field: 'player', label: '球員', name: true },
+    { field: 'nba_team', label: '球隊' },
+    { field: 'slot', label: '位置' },
+    { field: 'games_left', label: '預估先發', fmt: (r) => (r.out ? '不計' : `${r.games_left} 場`) },
+    { field: 'status', label: '狀態', fmt: (r) => r.status || '—' },
+  ];
+  for (const [side, id] of [['me', 'live-me-table'], ['opp', 'live-opp-table']]) {
+    const rows = roster(side);
+    drawTable($(id), rcols, rows, { key: (r) => keyOf(r.league_id, r.side, r.player), rowClass: (r) => (r.out ? 'fb-out' : '') });
+    [...$(id).tBodies[0].rows].forEach((tr, i) => {
+      const st = rows[i].status;
+      if (!st) return;
+      const td = tr.cells[4];
+      td.replaceChildren(el('span', { class: `fb-status${/^(GTD|DTD|Q|D)$/.test(st) ? ' fb-status-q' : ''}` }, st));
+    });
+  }
+}
+
+// Tag suffix = league percentile band: ! top/bottom 10% (darkest), * 10-20% (darker), none 20-30%.
+const tagEls = (list) => (list ? list.split(',') : []).map((t) => el('span', t.endsWith('!') ? { class: 'fb-hot' } : t.endsWith('*') ? { class: 'fb-warm' } : {}, t.replace(/[!*]$/, '')));
+
+// 核心球員 (picked without TO/PF): rank 1 in the middle (largest, orange ring), rank 2 silver, rank 3 bronze.
+function drawCore() {
+  const box = $('core');
+  const core = rowsOf('roster').filter((r) => r.team_key === S.team && r.core_rank).sort((a, b) => a.core_rank - b.core_rank);
+  box.hidden = !core.length;
+  box.replaceChildren(...[core[1], core[0], core[2]].filter(Boolean).map((r) => {
+    const fig = el('figure', { class: `fb-core-p fb-core-${r.core_rank}` });
+    const img = el('img', { alt: r.player, loading: 'lazy' });
+    if (/^data:image\//.test(r.img || '')) img.src = r.img;
+    fig.append(img);
+    const tags = el('span', { class: 'fb-core-tags' });
+    tags.append(...(r.top3 || r.strengths.replace(/[!*]/g, '')).split(',').filter(Boolean).map((t) => el('span', {}, t)));
+    fig.append(el('span', { class: 'fb-core-name' }, r.player), tags);
+    return fig;
+  }));
+}
+
+function drawRoster(ctx) {
+  const rows = rowsOf('roster').filter((r) => r.team_key === S.team).sort((a, b) => a.order - b.order);
+  const me = ctx.season.find((r) => r.team_key === S.team);
+  $('roster-team').textContent = me ? me.team_name : '';
+  const basis = rows[0]?.basis;
+  $('roster-basis').textContent = rows.length
+    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，${basis === '上季' ? '第 2 週結束前依上季場均判斷，第 3 週起改用本季' : '依本季數據判斷'}。TO、PF 越少越好，只會標出後段。`
+    : '還沒有這隊的陣容資料。';
+  const cols = [
+    { field: 'slot', label: '位置', name: true },
+    { field: 'player', label: '球員' },
+    { field: 'nba_team', label: '球隊' },
+    { field: 'pos', label: '可打位置', fmt: (r) => r.pos.replace(/,/g, ' / ') },
+    { field: 'status', label: '狀態', fmt: (r) => r.status || '' },
+    { field: 'gp', label: 'GP', fmt: (r) => (r.gp == null ? '—' : r.gp) },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => r[c.name] ?? '—' })),
+  ];
+  drawTable($('roster-table'), cols, rows, { key: (r) => keyOf(r.team_key, r.player), rowClass: (r) => (r.status === 'O' || r.status === 'INJ' || /^IL/.test(r.slot) ? 'fb-out' : '') });
+  [...$('roster-table').tBodies[0].rows].forEach((tr, i) => {
+    const r = rows[i];
+    if (r.core_rank) tr.cells[1].append(el('span', { class: `fb-medal fb-medal-${r.core_rank}` }, String(r.core_rank)));
+    if (r.status) tr.cells[4].replaceChildren(el('span', { class: `fb-status${/^(GTD|DTD|Q|D)$/.test(r.status) ? ' fb-status-q' : ''}` }, r.status));
+    ctx.cats.forEach((c, k) => {
+      const td = tr.cells[6 + k], band = (r.bands || '')[k];
+      td.classList.add('fb-stat');
+      if (band && band !== '-') td.replaceChildren(el('span', { class: `fb-band-${band}` }, td.textContent));
+    });
+  });
+}
+
+// Rising Stars: one card per free agent, with last game / last 3 / last 10 lines from Yahoo game logs.
+function drawRising(ctx) {
+  const rows = rowsOf('rising').filter((r) => r.league_id === S.league).sort((a, b) => a.rank - b.rank);
+  $('rising-empty').hidden = rows.length > 0;
+  const FLAG = { H: '近況火熱', A: '熱門 add', G: '上一場爆發' };
+  const pct = (m, a) => (a ? (m / a).toFixed(3).replace(/^0/, '') : '—');
+  const f1 = (v) => (v == null ? '—' : d3.format('.1f')(v));
+  const md = (d) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : '');
+  const head = ['', 'MIN', 'PTS', 'OREB', 'REB', 'AST', 'ST', 'BLK', '3PTM', 'FG%', 'FT%', 'TO', 'PF'];
+  $('rising-list').replaceChildren(...rows.map((r) => {
+    const card = el('article', { class: 'fb-rs' });
+    const h = el('div', { class: 'fb-rs-head' });
+    h.append(el('span', { class: 'fb-rs-name' }, r.player),
+      el('span', { class: 'fb-rs-meta' }, [r.nba_team, r.pos.replace(/,/g, '/'), r.availability === 'FA' ? 'FA 可直接撿' : r.availability, r.pct_ros != null ? `${r.pct_ros}% 持有` : '', r.adds != null ? `全站 +${d3.format(',')(r.adds)} adds` : ''].filter(Boolean).join(' · ')));
+    if (r.status) h.append(el('span', { class: `fb-status${/^(GTD|DTD|Q|D)$/.test(r.status) ? ' fb-status-q' : ''}` }, r.status));
+    const flags = el('div', { class: 'fb-rs-flags' });
+    flags.append(...r.flags.split('').map((f) => el('span', { class: `fb-flag fb-flag-${f}` }, FLAG[f])));
+    const t = el('table', { class: 'fb-table' });
+    const thr = el('tr'); head.forEach((x) => thr.append(el('th', {}, x)));
+    const tb = el('tbody');
+    for (const [label, g] of [[`上一場 ${md(r.last_date)} ${r.last_opp}`.trim(), r.last1], ['近 3 場', r.last3], [`近 10 場${r.games < 10 ? `（${r.games} 場）` : ''}`, r.last10]]) {
+      const tr = el('tr');
+      const cells = g ? [label, f1(g.min), f1(g.pts), f1(g.oreb), f1(g.reb), f1(g.ast), f1(g.stl), f1(g.blk), f1(g.tpm), pct(g.fgm, g.fga), pct(g.ftm, g.fta), f1(g.to), f1(g.pf)] : [label, '本季還沒出賽', '', '', '', '', '', '', '', '', '', '', ''];
+      cells.forEach((x) => tr.append(el('td', {}, x)));
+      tb.append(tr);
+    }
+    const th = el('thead'); th.append(thr); t.append(th, tb);
+    const wrap = el('div', { class: 'fb-scroll' }); wrap.append(t);
+    card.append(h, flags, wrap);
+    return card;
+  }));
+}
+
+// Streaming: starts per day, open slots, and free agents who add starts.
+function drawStream(ctx) {
+  S.period = S.period || 'this';
+  for (const b of document.querySelectorAll('.fb-seg-btn')) b.setAttribute('aria-pressed', String(b.dataset.period === S.period));
+  const rows = rowsOf('streaming').filter((r) => r.league_id === S.league && r.period === S.period);
+  const sum = rows.find((r) => r.kind === 'summary');
+  const days = rows.filter((r) => r.kind === 'day').sort((a, b) => (a.date < b.date ? -1 : 1));
+  const players = rows.filter((r) => r.kind === 'player').sort((a, b) => a.order - b.order);
+  const recs = rows.filter((r) => r.kind === 'rec').sort((a, b) => a.rank - b.rank);
+  const wd = (d) => '日一二三四五六'[new Date(d + 'T12:00:00Z').getUTCDay()];
+  const md = (d) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+  const tile = (label, big, small) => { const t = el('div'); t.append(el('span', {}, label), el('b', {}, big), el('small', {}, small)); return t; };
+  $('stream-tiles').replaceChildren(...(sum ? [
+    tile('預計先發', String(sum.my_starts), `共 ${sum.cap} 格，填滿 ${d3.format('.0%')(sum.cap ? sum.my_starts / sum.cap : 0)}`),
+    tile('空著的先發格', String(sum.cap - sum.my_starts), `${days.length} 天 × ${sum.slots.split(',').length} 個先發位置`),
+    tile(S.period === 'this' ? '對手預計先發' : '下週對手（本週對手）', String(sum.opp_starts), sum.opp_starts > sum.my_starts ? `比你多 ${sum.opp_starts - sum.my_starts} 場` : `比你少 ${sum.my_starts - sum.opp_starts} 場`),
+    tile('本週補人次數', sum.adds_used == null ? '—' : `${sum.adds_used} / ${sum.adds_max}`, sum.adds_used == null ? '' : `還能補 ${sum.adds_max - sum.adds_used} 人`),
+  ] : [el('div', {}, '還沒有這段期間的資料')]));
+
+  const cal = $('stream-cal');
+  const hr = el('tr');
+  hr.append(el('th', { class: 'fb-name' }, '球員'), el('th', {}, '位置'));
+  days.forEach((d) => hr.append(el('th', {}, `${md(d.date)}（${wd(d.date)}）`)));
+  cal.tHead.replaceChildren(hr);
+  const LABEL = { S: '先發', B: '板凳', X: '受傷', '-': '' };
+  cal.tBodies[0].replaceChildren(...players.map((p) => {
+    const tr = el('tr', p.flags.includes('X') && !/[SB]/.test(p.flags) ? { class: 'fb-out' } : {});
+    tr.append(el('td', { class: 'fb-name' }, p.player), el('td', {}, p.slot));
+    p.flags.split('').forEach((f) => { const td = el('td'); if (f !== '-') td.append(el('span', { class: `fb-cal fb-cal-${f}` }, LABEL[f])); tr.append(td); });
+    return tr;
+  }));
+  const f1 = el('tr'), f2 = el('tr');
+  f1.append(el('td', { class: 'fb-name' }, '先發人數'), el('td'));
+  f2.append(el('td', { class: 'fb-name' }, '空位'), el('td'));
+  days.forEach((d) => {
+    f1.append(el('td', {}, `${d.starts}`));
+    const td = el('td'), box = el('span', { class: 'fb-open' });
+    box.append(...(d.open ? d.open.split(',') : []).map((s) => el('span', {}, s)));
+    td.append(box); f2.append(td);
+  });
+  cal.tFoot.replaceChildren(f1, f2);
+
+  $('stream-recs-empty').hidden = recs.length > 0;
+  $('stream-recs').hidden = !recs.length;
+  drawTable($('stream-recs'), [
+    { field: 'player', label: '補進', name: true },
+    { field: 'nba_team', label: '球隊' },
+    { field: 'pos', label: '位置', fmt: (r) => r.pos.replace(/,/g, '/') },
+    { field: 'availability', label: '可撿', fmt: (r) => (r.availability === 'FA' ? '可直接撿' : r.availability) },
+    { field: 'gain', label: '多打', fmt: (r) => `+${r.gain} 場` },
+    { field: 'starts', label: '他先發', fmt: (r) => `${r.starts} 場` },
+    { field: 'drop', label: '建議丟' },
+    { field: 'game_days', label: '他的比賽日' },
+  ], recs, { key: (r) => keyOf(r.league_id, r.period, r.key) });
+}
+for (const b of document.querySelectorAll('.fb-seg-btn')) b.addEventListener('click', () => { S.period = b.dataset.period; render(); });
+
+/* ---------- header, tabs, controls ---------- */
+function drawHeader(ctx) {
+  const me = ctx.season.find((r) => r.team_key === S.team);
+  $('team-title').textContent = me ? me.team_name : '';
+  $('team-title').setAttribute('data-where', me ? whereOf({ team_key: me.team_key }) : '');
+  $('league-label').textContent = ctx.cats[0]?.league_name ?? '';
+  const lw = rowsOf('weekly').filter((r) => r.league_id === S.league);
+  const live = lw.filter((r) => r.status === 'midevent').map((r) => r.week);
+  const next = lw.filter((r) => r.status === 'preevent').map((r) => r.week);
+  const done = lw.filter((r) => r.status === 'postevent').map((r) => r.week);
+  $('week-pill').textContent = live.length ? `Week ${live[0]} · Live` : next.length ? `Week ${Math.min(...next)} · Tip-off soon` : done.length ? `Week ${Math.max(...done)} · Final` : '';
+  const where = me ? whereOf({ team_key: me.team_key }) : '';
+  const tiles = { 'tile-record': (r) => r.record, 'tile-standing': (r) => `#${r.standing}` };
+  for (const [id, f] of Object.entries(tiles)) {
+    const t = $(id);
+    t.classList.remove('dash-skeleton');
+    t.setAttribute('data-where', where);
+    t.textContent = me ? f(me) : '—';
+  }
+  const take = $('takeaway');
+  take.classList.remove('dash-skeleton');
+  drawCore();
+  take.hidden = !me || !me.weeks;
+  if (!me || !me.weeks) { take.textContent = ''; return; }
+  const ranked = ctx.cats.filter((c) => me[c.name] != null).sort((a, b) => me[a.name] - me[b.name]);
+  const best = ranked.slice(0, 2).map((c) => `${c.name}（${fmtRank(me[c.name])}）`).join('、');
+  const worst = ranked.slice(-2).reverse().map((c) => `${c.name}（${fmtRank(me[c.name])}）`).join('、');
+  take.textContent = `${me.team_name} 目前 ${me.record}，聯盟第 ${me.standing} 名。最強的類別是 ${best}，最弱的是 ${worst}。括號內是平均名次。`;
+}
+
+/* ---------- PIN lock ---------- */
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function openVault(pin) {
+  const v = rowsOf('vault')[0];
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(v.salt), iterations: v.iter }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(v.iv) }, key, b64(v.ct));
+  Object.assign(PRIV, JSON.parse(new TextDecoder().decode(plain)));
+  unlocked = true;
+  for (const b of document.querySelectorAll('.fb-tab-locked')) { b.classList.remove('fb-tab-locked'); b.removeAttribute('data-tip'); b.querySelector('.fb-lock')?.remove(); }
+}
+try { localStorage.removeItem('fb-pin'); } catch {}  // PIN used to be remembered; now every reload asks again
+async function tryPin() {
+  const msg = $('pin-msg');
+  if (dash.data('vault').status !== 'ok' || !rowsOf('vault')[0]) { msg.textContent = '資料還在載入，請稍後再試'; return; }
+  msg.textContent = '解鎖中…';
+  const pin = $('pin-input').value;
+  try { await openVault(pin); } catch { msg.textContent = 'PIN 不對，再試一次'; $('pin-input').select(); return; }
+  $('pin-input').value = '';
+  msg.textContent = '';
+  showTab(S.tab, false);
+}
+$('pin-btn')?.addEventListener('click', tryPin);
+$('pin-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryPin(); });
+
+function showTab(tab, fromClick) {
+  S.tab = tab;
+  const view = LOCKED.has(tab) && !unlocked ? 'pin' : tab;
+  for (const b of document.querySelectorAll('.fb-tab')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  for (const p of document.querySelectorAll('.fb-page')) p.hidden = p.dataset.page !== view;
+  if (fromClick) dash.setLink(tab);
+  render();
+}
+
+for (const b of document.querySelectorAll('.fb-tab')) b.addEventListener('click', () => showTab(b.dataset.tab, true));
+$('pick-league').addEventListener('change', (e) => { S.league = e.target.value; S.team = null; S.rankTeam = null; S.week = null; render(); });
+$('pick-team').addEventListener('change', (e) => { S.team = e.target.value; S.rankTeam = null; render(); });
+$('pick-rank-team').addEventListener('change', (e) => { S.rankTeam = e.target.value; render(); });
+$('pick-week').addEventListener('change', (e) => { S.week = Number(e.target.value); render(); });
+
+const PAGES = { live: drawLive, league: (ctx) => { drawLeague(ctx); drawWeek(ctx); }, roster: drawRoster, rising: drawRising, stream: drawStream, season: drawSeason, next: drawNext };
+const NEEDS = { live: ['live_match', 'live_cats', 'live_players', 'live_recs'], league: ['weekly', 'ranks'], roster: ['roster'], rising: ['rising'], stream: ['streaming'], season: ['season', 'splits', 'ranks'], next: ['preview', 'h2h'] };
+
+function render() {
+  const base = ['weekly', 'categories', 'season'];
+  const failed = base.some((id) => ['error', 'connect', 'declined', 'missing'].includes(dash.data(id).status));
+  if (failed) {
+    for (const box of document.querySelectorAll('.fb-card')) { if (!box.querySelector('.fb-fail')) box.append(el('div', { class: 'fb-fail' }, 'Failed to load')); }
+    return;
+  }
+  for (const f of document.querySelectorAll('.fb-fail')) f.remove();
+  if (base.some((id) => dash.data(id).status !== 'ok')) return;
+  $('sample-note').hidden = !window.FB_SAMPLE;
+
+  const leagues = [...new Map(rowsOf('categories').map((c) => [c.league_id, c.league_name])).entries()];
+  if (!leagues.some(([id]) => id === S.league)) S.league = leagues[0]?.[0] ?? null;
+  setSelect($('pick-league'), leagues.map(([value, label]) => ({ value, label })), S.league);
+
+  const season = rowsOf('season').filter((r) => r.league_id === S.league);
+  if (!season.some((r) => r.team_key === S.team)) S.team = (season.find((r) => r.is_me) || season[0])?.team_key ?? null;
+  setSelect($('pick-team'), [...season].sort((a, b) => a.team_name.localeCompare(b.team_name)).map((r) => ({ value: r.team_key, label: r.is_me ? `${r.team_name}（我）` : r.team_name })), S.team);
+
+  const played = rowsOf('weekly').filter((r) => r.league_id === S.league && r.status !== 'preevent');
+  const upcoming = rowsOf('weekly').filter((r) => r.league_id === S.league && r.status === 'preevent').map((r) => r.week);
+  $('empty-note').hidden = played.length > 0;
+  $('empty-note').textContent = played.length ? '' : `第 ${upcoming.length ? Math.min(...upcoming) : 1} 週還沒開打，打完第一場之後這裡才會有排名和數據；「下週對手」已經可以看到對戰對象。`;
+
+  const ctx = { cats: catsOf(S.league), season, n: season.length || 14 };
+  drawHeader(ctx);
+  if (!PAGES[S.tab]) S.tab = 'league';
+  if (LOCKED.has(S.tab) && !unlocked) return;
+  if (NEEDS[S.tab].every((id) => PRIV[id] || dash.data(id).status === 'ok')) PAGES[S.tab](ctx);
+}
+
+window.FB_SAMPLE = false;
+const start = location.hash.slice(1);
+dash.onData(render);
+showTab(PAGES[start] ? start : 'league', false);
+</script>
+
+</body>
+</html>

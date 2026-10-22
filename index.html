@@ -417,7 +417,7 @@ window.dash = (() => {
     </div>
     <div class="fb-card" id="stream-recs-card">
       <div class="fb-card-title"><span class="fb-kicker">Streamers</span><h2>推薦拿來洗的球員</h2></div>
-      <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉這一隊名單上的每一位，列出能多打最多場先發的組合；同樣多場時，比他的綜合數據。</p>
+      <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉這一隊名單上的每一位，列出能多打最多場先發的組合；同樣多場時，比他的綜合數據。右邊是他在這個聯盟各比項的場均（本季為主、開季混入上季）。</p>
       <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-vault="streaming" data-row-key="team_key,period,key"><thead></thead><tbody></tbody></table></div>
       <p class="fb-empty" id="stream-recs-empty" hidden>這段期間沒有能多打場次的自由球員，先發格已經排滿了。</p>
     </div>
@@ -1208,7 +1208,12 @@ function drawRising(ctx) {
   const pct = (m, a) => (a ? (m / a).toFixed(3).replace(/^0/, '') : '—');
   const f1 = (v) => (v == null ? '—' : d3.format('.1f')(v));
   const md = (d) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : '');
-  const head = ['', 'MIN', 'PTS', 'OREB', 'REB', 'AST', 'ST', 'BLK', '3PTM', 'FG%', 'FT%', 'TO', 'PF'];
+  // Columns follow the league's own categories (in league order), after minutes.
+  const cats = ctx.cats.map((c) => c.name);
+  const head = ['', 'MIN', ...cats];
+  const CELL = { 'FG%': (g) => pct(g.fgm, g.fga), 'FT%': (g) => pct(g.ftm, g.fta), '3PTM': (g) => f1(g.tpm), PTS: (g) => f1(g.pts), OREB: (g) => f1(g.oreb),
+    REB: (g) => f1(g.reb), AST: (g) => f1(g.ast), ST: (g) => f1(g.stl), BLK: (g) => f1(g.blk), TO: (g) => f1(g.to), PF: (g) => f1(g.pf),
+    'A/T': (g) => (g.to ? d3.format('.2f')(g.ast / g.to) : '—') };
   $('rising-list').replaceChildren(...rows.map((r) => {
     const card = el('article', { class: 'fb-rs' });
     const h = el('div', { class: 'fb-rs-head' });
@@ -1222,7 +1227,7 @@ function drawRising(ctx) {
     const tb = el('tbody');
     for (const [label, g] of [[`上一場 ${md(r.last_date)} ${r.last_opp}`.trim(), r.last1], ['近 3 場', r.last3], [`近 10 場${r.games < 10 ? `（${r.games} 場）` : ''}`, r.last10]]) {
       const tr = el('tr');
-      const cells = g ? [label, f1(g.min), f1(g.pts), f1(g.oreb), f1(g.reb), f1(g.ast), f1(g.stl), f1(g.blk), f1(g.tpm), pct(g.fgm, g.fga), pct(g.ftm, g.fta), f1(g.to), f1(g.pf)] : [label, '本季還沒出賽', '', '', '', '', '', '', '', '', '', '', ''];
+      const cells = g ? [label, f1(g.min), ...cats.map((c) => (CELL[c] ? CELL[c](g) : '—'))] : [label, '本季還沒出賽', ...cats.map(() => '')];
       cells.forEach((x) => tr.append(el('td', {}, x)));
       tb.append(tr);
     }
@@ -1286,6 +1291,8 @@ function drawStream(ctx) {
     { field: 'starts', label: '他先發', fmt: (r) => `${r.starts} 場` },
     { field: 'drop', label: '建議丟' },
     { field: 'game_days', label: '他的比賽日' },
+    // per-game line in this league's categories (this season blended with last, as in the projections)
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => fmtAvg(c.name, r.stats?.[c.name]) })),
   ], recs, { key: (r) => keyOf(r.team_key, r.period, r.key) });
 }
 for (const b of document.querySelectorAll('.fb-seg-btn')) b.addEventListener('click', () => { S.period = b.dataset.period; render(); });

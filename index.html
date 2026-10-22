@@ -433,27 +433,27 @@ window.dash = (() => {
         <div class="fb-vs-side"><span class="fb-vs-role">Away</span><span class="fb-vs-name" id="live-opp" data-vault="live_match" data-field="opp_name">—</span></div>
         <div class="fb-vs-foot" id="live-foot" data-vault="live_match"></div>
       </div>
-      <p class="fb-note" id="live-note">中間是目前的贏項比數。預估 = 目前累積 + 每位球員剩餘場次 × 場均數據；場均用本季平均，並依出賽場數混入上季平均（開季樣本少時多參考上季）。標示 O、INJ 或放在傷兵名單的球員不計，GTD/DTD 照算。每天依位置排出最強先發。本分頁只分析你自己的對戰。</p>
+      <p class="fb-note" id="live-note">中間是目前的贏項比數。預估 = 目前累積 + 每位球員剩餘場次 × 場均數據；場均用本季平均，並依出賽場數混入上季平均（開季樣本少時多參考上季）。標示 O、INJ 或放在傷兵名單的球員不計，GTD/DTD 照算。每天依位置排出最強先發。分析的是上方「隊伍」選單選的那一隊，切換隊伍就能看其他 GM 的戰況。</p>
     </div>
     <div class="fb-card" id="live-cats-card">
       <span class="fb-kicker">Box score</span>
       <h2>各類別：目前 → 週末預估</h2>
       <p class="fb-note">勝率 65% 以上算「贏」、35% 以下算「輸」，中間是「拉鋸」，最值得補強。</p>
-      <div class="fb-scroll"><table class="fb-table" id="live-cats" data-vault="live_cats" data-row-key="league_id,cat"><thead></thead><tbody></tbody></table></div>
+      <div class="fb-scroll"><table class="fb-table" id="live-cats" data-vault="live_cats" data-row-key="team_key,cat"><thead></thead><tbody></tbody></table></div>
     </div>
     <div class="fb-grid">
       <div class="fb-card" id="live-recs-card">
         <span class="fb-kicker">Free agents</span>
         <h2>可以補的人</h2>
-        <p class="fb-note">試算自由市場前 75 名球員，每人搭配丟掉你名單上的每一位，列出期望贏項增加最多的組合。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-recs" data-vault="live_recs" data-row-key="league_id,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <p class="fb-note">試算自由市場前 75 名球員，每人搭配丟掉這一隊名單上的每一位，列出期望贏項增加最多的組合。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
+        <div class="fb-scroll"><table class="fb-table" id="live-recs" data-vault="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
         <p class="fb-empty" id="live-recs-empty" hidden>目前沒有能明顯提升本週戰況的自由球員。</p>
       </div>
       <div class="fb-card" id="live-bench-card">
         <span class="fb-kicker">Bench</span>
         <h2>建議坐板凳</h2>
         <p class="fb-note">某天讓某位球員坐板凳、反而能多贏一點的情況，例如保護 FG%、TO 或 PF。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-bench" data-vault="live_recs" data-row-key="league_id,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-bench" data-vault="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
         <p class="fb-empty" id="live-bench-empty" hidden>這週沒有需要刻意坐板凳的球員，有比賽就讓他們上。</p>
       </div>
     </div>
@@ -462,12 +462,12 @@ window.dash = (() => {
         <span class="fb-kicker">Home roster</span>
         <h2>我方名單</h2>
         <p class="fb-note">「預估先發」是剩下的日子裡，依位置排最強 10 人先發時他會上場幾場；0 場代表有比賽但排不進先發。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-me-table" data-vault="live_players" data-row-key="league_id,side,player"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-me-table" data-vault="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
       </div>
       <div class="fb-card" id="live-opp-card">
         <span class="fb-kicker">Away roster</span>
         <h2>對手名單</h2>
-        <div class="fb-scroll"><table class="fb-table" id="live-opp-table" data-vault="live_players" data-row-key="league_id,side,player"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-opp-table" data-vault="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
       </div>
     </div>
   </section>
@@ -1072,8 +1072,8 @@ function drawNext(ctx) {
 }
 
 function drawLive(ctx) {
-  const m = rowsOf('live_match').find((r) => r.league_id === S.league);
-  const where = m ? whereOf({ league_id: m.league_id }) : '';
+  const m = rowsOf('live_match').find((r) => r.team_key === S.team);
+  const where = m ? whereOf({ team_key: m.team_key }) : '';
   for (const id of ['live-week', 'live-me', 'live-now-w', 'live-now-l', 'live-opp']) $(id).setAttribute('data-where', where);
   $('live-week').textContent = m ? m.week : '—';
   $('live-me').textContent = m ? m.me_name : '—';
@@ -1083,10 +1083,10 @@ function drawLive(ctx) {
   const md = (d) => d.slice(5).replace('-', '/');
   $('live-foot').textContent = m
     ? `${md(m.first_day)}–${md(m.last_day)}・週末預估：穩贏 ${m.proj_win} 項、拉鋸 ${m.proj_toss} 項、落後 ${m.proj_lose} 項（期望贏 ${m.exp_w} 項）・剩餘出賽 ${m.games_me} 對 ${m.games_opp} 場`
-    : '這個聯盟還沒有本週戰況資料，跟 Claude 說「更新本週戰況」就會產生。';
+    : '這一隊還沒有本週戰況資料，跟 Claude 說「更新資料」就會產生。';
 
   const pctBar = (r) => r.win_prob;
-  const cats = rowsOf('live_cats').filter((r) => r.league_id === S.league).sort((a, b) => a.order - b.order);
+  const cats = rowsOf('live_cats').filter((r) => r.team_key === S.team).sort((a, b) => a.order - b.order);
   const val = (c, v, avg) => (avg ? fmtAvg(c, v) : fmtVal(c, v));
   drawTable($('live-cats'), [
     { field: 'cat', label: '類別', name: true },
@@ -1096,7 +1096,7 @@ function drawLive(ctx) {
     { field: 'opp_final', label: '對手預估', fmt: (r) => val(r.cat, r.opp_final, true), bold: (r) => r.win_prob < 0.5 },
     { field: 'win_prob', label: '勝率', fmt: (r) => d3.format('.0%')(r.win_prob) },
     { field: 'verdict', label: '預測', pill: (r) => 'fb-verdict-' + r.verdict },
-  ], cats, { key: (r) => keyOf(r.league_id, r.cat) });
+  ], cats, { key: (r) => keyOf(r.team_key, r.cat) });
   // probability bars drawn into the 勝率 cells
   const probCol = 5;
   [...$('live-cats').tBodies[0].rows].forEach((tr, i) => {
@@ -1107,7 +1107,7 @@ function drawLive(ctx) {
     td.replaceChildren(wrap);
   });
 
-  const recs = rowsOf('live_recs').filter((r) => r.league_id === S.league);
+  const recs = rowsOf('live_recs').filter((r) => r.team_key === S.team);
   const adds = recs.filter((r) => r.kind === 'add').sort((a, b) => a.rank - b.rank);
   $('live-recs-empty').hidden = adds.length > 0;
   $('live-recs').hidden = !adds.length;
@@ -1119,7 +1119,7 @@ function drawLive(ctx) {
     { field: 'games_left', label: '本週可上', fmt: (r) => `${r.games_left} 場` },
     { field: 'gain', label: '期望贏項', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
     { field: 'flips', label: '翻盤類別', fmt: (r) => r.flips ? r.flips.split(' ').map((f) => (f[0] === '+' ? '轉贏 ' : '轉輸 ') + f.slice(1)).join('、') : '—' },
-  ], adds, { key: (r) => keyOf(r.league_id, r.kind, r.rank) });
+  ], adds, { key: (r) => keyOf(r.team_key, r.kind, r.rank) });
 
   const bench = recs.filter((r) => r.kind === 'bench').sort((a, b) => a.rank - b.rank);
   $('live-bench-empty').hidden = bench.length > 0;
@@ -1128,9 +1128,9 @@ function drawLive(ctx) {
     { field: 'date', label: '日期', name: true, fmt: (r) => (r.date ? md(r.date) : '—') },
     { field: 'player', label: '坐板凳' },
     { field: 'gain', label: '期望贏項', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
-  ], bench, { key: (r) => keyOf(r.league_id, r.kind, r.rank) });
+  ], bench, { key: (r) => keyOf(r.team_key, r.kind, r.rank) });
 
-  const roster = (side) => rowsOf('live_players').filter((r) => r.league_id === S.league && r.side === side);
+  const roster = (side) => rowsOf('live_players').filter((r) => r.team_key === S.team && r.side === side);
   const rcols = [
     { field: 'player', label: '球員', name: true },
     { field: 'nba_team', label: '球隊' },
@@ -1140,7 +1140,7 @@ function drawLive(ctx) {
   ];
   for (const [side, id] of [['me', 'live-me-table'], ['opp', 'live-opp-table']]) {
     const rows = roster(side);
-    drawTable($(id), rcols, rows, { key: (r) => keyOf(r.league_id, r.side, r.player), rowClass: (r) => (r.out ? 'fb-out' : '') });
+    drawTable($(id), rcols, rows, { key: (r) => keyOf(r.team_key, r.side, r.player), rowClass: (r) => (r.out ? 'fb-out' : '') });
     [...$(id).tBodies[0].rows].forEach((tr, i) => {
       const st = rows[i].status;
       if (!st) return;

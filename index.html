@@ -408,7 +408,7 @@ window.dash = (() => {
         </div>
       </div>
       <div class="fb-stream-tiles" id="stream-tiles" data-vault="streaming"></div>
-      <p class="fb-note">每天依位置排最強的先發；O、INJ 和傷兵名單不算。空位是那天沒有人能填的先發格，板凳是有比賽卻排不進先發的人。</p>
+      <p class="fb-note">分析的是上方「隊伍」選單選的那一隊。每天依位置排最強的先發；O、INJ 和傷兵名單不算。空位是那天沒有人能填的先發格，板凳是有比賽卻排不進先發的人。補人次數只有自己的隊伍看得到。</p>
     </div>
     <div class="fb-card" id="stream-cal-card">
       <div class="fb-card-title"><span class="fb-kicker">Calendar</span><h2>每天的先發與空位</h2></div>
@@ -417,9 +417,9 @@ window.dash = (() => {
     </div>
     <div class="fb-card" id="stream-recs-card">
       <div class="fb-card-title"><span class="fb-kicker">Streamers</span><h2>推薦拿來洗的球員</h2></div>
-      <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉你名單上的每一位，列出能讓你多打最多場先發的組合；同樣多場時，比他的綜合數據。</p>
-      <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-vault="streaming" data-row-key="league_id,period,key"><thead></thead><tbody></tbody></table></div>
-      <p class="fb-empty" id="stream-recs-empty" hidden>這段期間沒有能讓你多打場次的自由球員，先發格已經排滿了。</p>
+      <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉這一隊名單上的每一位，列出能多打最多場先發的組合；同樣多場時，比他的綜合數據。</p>
+      <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-vault="streaming" data-row-key="team_key,period,key"><thead></thead><tbody></tbody></table></div>
+      <p class="fb-empty" id="stream-recs-empty" hidden>這段期間沒有能多打場次的自由球員，先發格已經排滿了。</p>
     </div>
   </section>
 
@@ -1237,7 +1237,7 @@ function drawRising(ctx) {
 function drawStream(ctx) {
   S.period = S.period || 'this';
   for (const b of document.querySelectorAll('.fb-seg-btn')) b.setAttribute('aria-pressed', String(b.dataset.period === S.period));
-  const rows = rowsOf('streaming').filter((r) => r.league_id === S.league && r.period === S.period);
+  const rows = rowsOf('streaming').filter((r) => r.team_key === S.team && r.period === S.period);
   const sum = rows.find((r) => r.kind === 'summary');
   const days = rows.filter((r) => r.kind === 'day').sort((a, b) => (a.date < b.date ? -1 : 1));
   const players = rows.filter((r) => r.kind === 'player').sort((a, b) => a.order - b.order);
@@ -1248,7 +1248,7 @@ function drawStream(ctx) {
   $('stream-tiles').replaceChildren(...(sum ? [
     tile('預計先發', String(sum.my_starts), `共 ${sum.cap} 格，填滿 ${d3.format('.0%')(sum.cap ? sum.my_starts / sum.cap : 0)}`),
     tile('空著的先發格', String(sum.cap - sum.my_starts), `${days.length} 天 × ${sum.slots.split(',').length} 個先發位置`),
-    tile(S.period === 'this' ? '對手預計先發' : '下週對手（本週對手）', String(sum.opp_starts), sum.opp_starts > sum.my_starts ? `比你多 ${sum.opp_starts - sum.my_starts} 場` : `比你少 ${sum.my_starts - sum.opp_starts} 場`),
+    tile(S.period === 'this' ? '對手預計先發' : '下週對手預計先發', sum.opp_starts == null ? '—' : String(sum.opp_starts), sum.opp_starts == null ? '' : `${sum.opp_name}・${sum.opp_starts > sum.my_starts ? `多 ${sum.opp_starts - sum.my_starts} 場` : sum.opp_starts < sum.my_starts ? `少 ${sum.my_starts - sum.opp_starts} 場` : '一樣多'}`),
     tile('本週補人次數', sum.adds_used == null ? '—' : `${sum.adds_used} / ${sum.adds_max}`, sum.adds_used == null ? '' : `還能補 ${sum.adds_max - sum.adds_used} 人`),
   ] : [el('div', {}, '還沒有這段期間的資料')]));
 
@@ -1286,7 +1286,7 @@ function drawStream(ctx) {
     { field: 'starts', label: '他先發', fmt: (r) => `${r.starts} 場` },
     { field: 'drop', label: '建議丟' },
     { field: 'game_days', label: '他的比賽日' },
-  ], recs, { key: (r) => keyOf(r.league_id, r.period, r.key) });
+  ], recs, { key: (r) => keyOf(r.team_key, r.period, r.key) });
 }
 for (const b of document.querySelectorAll('.fb-seg-btn')) b.addEventListener('click', () => { S.period = b.dataset.period; render(); });
 

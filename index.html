@@ -312,6 +312,45 @@ window.dash = (() => {
   .fb-tile-v { animation: fb-pop var(--cds-dur-slow) var(--cds-ease-out) both; }
   @keyframes fb-pop { from { opacity: .3; transform: scale(.92); } to { opacity: 1; transform: none; } }
 }
+
+/* ---- 問 AI ---- */
+.fb-ai { margin-left: auto; display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; font-size: var(--cds-font-size-caption); color: #fff; background: var(--fb-ball); border-radius: 999px; padding: .3rem .85rem; text-decoration: none; box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--fb-ball) 70%, transparent); }
+.fb-ai svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linejoin: round; }
+.fb-ai:hover { filter: brightness(1.08); }
+.fb-ai:focus-visible { outline: 2px solid var(--fb-led); outline-offset: 2px; }
+
+/* ---- phone layout ---- */
+@media (max-width: 40rem) {
+  .fb { gap: .8rem; }
+  .fb-board { padding: 1rem; gap: .9rem; border-radius: var(--fb-r); }
+  .fb-title span { font-size: 1.7rem; }
+  .fb-take { font-size: .88rem; line-height: 1.55; }
+  .fb-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem; }
+  .fb-field select { min-width: 0; width: 100%; padding: .45rem .8rem; }
+  .fb-core-p img { width: 3.4rem; }
+  .fb-core-1 img { width: 4.8rem; }
+  .fb-core-2 img { width: 4rem; }
+  .fb-tile { padding: .6rem; }
+  .fb-tile-v { font-size: 1.7rem; }
+  .fb-tabs { position: sticky; top: 0; z-index: 20; justify-self: stretch; border-radius: 16px; padding: .3rem; gap: .25rem; scrollbar-width: none;
+    background: color-mix(in srgb, var(--color-panel) 92%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  .fb-tabs::-webkit-scrollbar { display: none; }
+  .fb-tab { padding: .5rem .8rem; font-size: .9rem; }
+  .fb-tab[data-tip]::after { display: none; }
+  .fb-card { padding: .9rem; border-radius: 16px; }
+  .fb-card h2 { font-size: 1.1rem; }
+  .fb-grid, .fb-rising { grid-template-columns: minmax(0, 1fr); gap: .8rem; }
+  .fb-scroll { max-height: 72vh; }
+  .fb-table { font-size: .74rem; }
+  .fb-table th { padding: .45rem .3rem; }
+  .fb-table td { padding: .28rem .2rem; }
+  .fb-table .fb-name { padding-left: .4rem; max-width: 7.5rem; overflow: hidden; text-overflow: ellipsis; box-shadow: 4px 0 6px -4px color-mix(in srgb, var(--color-fg) 25%, transparent); }
+  .fb-rk { min-width: 1.8rem; padding: .2rem .35rem; }
+  #roster-table td.fb-stat span { min-width: 2.2rem; padding: .12rem .3rem; }
+  .fb-seg { flex-wrap: wrap; }
+  .fb-stream-tiles b { font-size: 1.35rem; }
+  .fb-lock-panel { min-height: 12rem; padding: 1rem; }
+}
 </style>
 
 <div class="fb">
@@ -1338,7 +1377,15 @@ async function openVault(pin) {
   unlocked = true;
   for (const b of document.querySelectorAll('.fb-tab-locked')) { b.classList.remove('fb-tab-locked'); b.removeAttribute('data-tip'); b.querySelector('.fb-lock')?.remove(); }
 }
-try { localStorage.removeItem('fb-pin'); } catch {}  // PIN used to be remembered; now every reload asks again
+// The PIN is remembered per browser (user asked 2026-10-26), so each browser asks only once
+let autoTried = false;
+async function autoUnlock() {
+  autoTried = true;
+  let pin = null;
+  try { pin = localStorage.getItem('fb-pin'); } catch {}
+  if (!pin) return;
+  try { await openVault(pin); showTab(S.tab, false); } catch { try { localStorage.removeItem('fb-pin'); } catch {} }
+}
 async function tryPin() {
   const msg = $('pin-msg');
   if (dash.data('vault').status !== 'ok' || !rowsOf('vault')[0]) { msg.textContent = '資料還在載入，請稍後再試'; return; }
@@ -1397,6 +1444,7 @@ function render() {
   const ctx = { cats: catsOf(S.league), season, n: season.length || 14 };
   drawHeader(ctx);
   if (!PAGES[S.tab]) S.tab = 'league';
+  if (!autoTried && dash.data('vault').status === 'ok') autoUnlock();
   if (LOCKED.has(S.tab) && !unlocked) return;
   if (NEEDS[S.tab].every((id) => PRIV[id] || dash.data(id).status === 'ok')) PAGES[S.tab](ctx);
 }

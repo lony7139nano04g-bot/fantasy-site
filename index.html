@@ -41,7 +41,7 @@ body { margin: 0; padding: 24px 16px 48px; background: var(--color-bg); color: v
 // Implements the part of `dash` the page uses: data(), calc(), onData(), setLink(). Datasets are the JSON files
 // under data/; calcs run once all their inputs have loaded.
 window.dash = (() => {
-  const FILES = ['weekly', 'categories', 'roster', 'vault'];
+  const FILES = ['weekly', 'categories', 'roster', 'live_match', 'live_cats', 'live_players', 'live_recs', 'rising', 'streaming'];
   const state = {}, calcs = {}, subs = [];
   for (const id of FILES) state[id] = { status: 'loading', data: null };
   const notify = () => { for (const fn of subs) fn(); };
@@ -405,7 +405,7 @@ window.dash = (() => {
       <p class="fb-note">逐場數據來自 Yahoo Sports 的球員比賽記錄。</p>
       <p class="fb-empty" id="rising-empty" hidden>這個聯盟目前沒有符合條件的自由球員。</p>
     </div>
-    <div class="fb-rising" id="rising-list" data-vault="rising"></div>
+    <div class="fb-rising" id="rising-list" data-source="rising"></div>
   </section>
 
   <section class="fb-page" id="stream" data-page="stream" hidden>
@@ -417,18 +417,18 @@ window.dash = (() => {
           <button type="button" class="fb-seg-btn" id="stream-next" data-period="next">下週</button>
         </div>
       </div>
-      <div class="fb-stream-tiles" id="stream-tiles" data-vault="streaming"></div>
+      <div class="fb-stream-tiles" id="stream-tiles" data-source="streaming"></div>
       <p class="fb-note">分析的是上方「隊伍」選單選的那一隊。每天依位置排最強的先發；O、INJ 和傷兵名單不算。空位是那天沒有人能填的先發格，板凳是有比賽卻排不進先發的人。補人次數只有自己的隊伍看得到。</p>
     </div>
     <div class="fb-card" id="stream-cal-card">
       <div class="fb-card-title"><span class="fb-kicker">Calendar</span><h2>每天的先發與空位</h2></div>
       <div class="fb-legend-bands"><span class="fb-cal fb-cal-S">先發</span><span class="fb-cal fb-cal-B">板凳</span><span class="fb-cal fb-cal-X">受傷</span><span class="fb-cal fb-cal-none">沒比賽</span></div>
-      <div class="fb-scroll"><table class="fb-table" id="stream-cal" data-vault="streaming"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
+      <div class="fb-scroll"><table class="fb-table" id="stream-cal" data-source="streaming"><thead></thead><tbody></tbody><tfoot></tfoot></table></div>
     </div>
     <div class="fb-card" id="stream-recs-card">
       <div class="fb-card-title"><span class="fb-kicker">Streamers</span><h2>推薦拿來洗的球員</h2></div>
       <p class="fb-note">試算自由市場前 75 名，每人搭配丟掉這一隊名單上的每一位，列出能多打最多場先發的組合；同樣多場時，比他的綜合數據。右邊是他在這個聯盟各比項的場均（本季為主、開季混入上季）。</p>
-      <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-vault="streaming" data-row-key="team_key,period,key"><thead></thead><tbody></tbody></table></div>
+      <div class="fb-scroll"><table class="fb-table" id="stream-recs" data-source="streaming" data-row-key="team_key,period,key"><thead></thead><tbody></tbody></table></div>
       <p class="fb-empty" id="stream-recs-empty" hidden>這段期間沒有能多打場次的自由球員，先發格已經排滿了。</p>
     </div>
   </section>
@@ -436,12 +436,12 @@ window.dash = (() => {
   <section class="fb-page" id="live" data-page="live" hidden>
     <div class="fb-card" id="live-card">
       <span class="fb-kicker">Live game</span>
-      <h2>第 <span id="live-week" data-vault="live_match" data-field="week">—</span> 週戰況</h2>
-      <div class="fb-vs" id="live-vs" data-vault="live_match">
-        <div class="fb-vs-side"><span class="fb-vs-role">Home</span><span class="fb-vs-name" id="live-me" data-vault="live_match" data-field="me_name">—</span></div>
-        <div class="fb-vs-score" aria-label="目前贏項比數"><span id="live-now-w" data-vault="live_match" data-field="now_w">—</span><i>VS</i><span id="live-now-l" data-vault="live_match" data-field="now_l">—</span></div>
-        <div class="fb-vs-side"><span class="fb-vs-role">Away</span><span class="fb-vs-name" id="live-opp" data-vault="live_match" data-field="opp_name">—</span></div>
-        <div class="fb-vs-foot" id="live-foot" data-vault="live_match"></div>
+      <h2>第 <span id="live-week" data-source="live_match" data-field="week">—</span> 週戰況</h2>
+      <div class="fb-vs" id="live-vs" data-source="live_match">
+        <div class="fb-vs-side"><span class="fb-vs-role">Home</span><span class="fb-vs-name" id="live-me" data-source="live_match" data-field="me_name">—</span></div>
+        <div class="fb-vs-score" aria-label="目前贏項比數"><span id="live-now-w" data-source="live_match" data-field="now_w">—</span><i>VS</i><span id="live-now-l" data-source="live_match" data-field="now_l">—</span></div>
+        <div class="fb-vs-side"><span class="fb-vs-role">Away</span><span class="fb-vs-name" id="live-opp" data-source="live_match" data-field="opp_name">—</span></div>
+        <div class="fb-vs-foot" id="live-foot" data-source="live_match"></div>
       </div>
       <p class="fb-note" id="live-note">中間是目前的贏項比數。預估 = 目前累積 + 每位球員剩餘場次 × 場均數據；場均用本季平均，並依出賽場數混入上季平均（開季樣本少時多參考上季）。標示 O、INJ 或放在傷兵名單的球員不計，GTD/DTD 照算。每天依位置排出最強先發。分析的是上方「隊伍」選單選的那一隊，切換隊伍就能看其他 GM 的戰況。</p>
     </div>
@@ -449,21 +449,21 @@ window.dash = (() => {
       <span class="fb-kicker">Box score</span>
       <h2>各類別：目前 → 週末預估</h2>
       <p class="fb-note">勝率 65% 以上算「贏」、35% 以下算「輸」，中間是「拉鋸」，最值得補強。</p>
-      <div class="fb-scroll"><table class="fb-table" id="live-cats" data-vault="live_cats" data-row-key="team_key,cat"><thead></thead><tbody></tbody></table></div>
+      <div class="fb-scroll"><table class="fb-table" id="live-cats" data-source="live_cats" data-row-key="team_key,cat"><thead></thead><tbody></tbody></table></div>
     </div>
     <div class="fb-grid">
       <div class="fb-card" id="live-recs-card">
         <span class="fb-kicker">Free agents</span>
         <h2>可以補的人</h2>
         <p class="fb-note">試算自由市場前 75 名球員，每人搭配丟掉這一隊名單上的每一位，列出期望贏項增加最多的組合。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-recs" data-vault="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-recs" data-source="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
         <p class="fb-empty" id="live-recs-empty" hidden>目前沒有能明顯提升本週戰況的自由球員。</p>
       </div>
       <div class="fb-card" id="live-bench-card">
         <span class="fb-kicker">Bench</span>
         <h2>建議坐板凳</h2>
         <p class="fb-note">某天讓某位球員坐板凳、反而能多贏一點的情況，例如保護 FG%、TO 或 PF。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-bench" data-vault="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-bench" data-source="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
         <p class="fb-empty" id="live-bench-empty" hidden>這週沒有需要刻意坐板凳的球員，有比賽就讓他們上。</p>
       </div>
     </div>
@@ -472,12 +472,12 @@ window.dash = (() => {
         <span class="fb-kicker">Home roster</span>
         <h2>我方名單</h2>
         <p class="fb-note">「預估先發」是剩下的日子裡，依位置排最強 10 人先發時他會上場幾場；0 場代表有比賽但排不進先發。</p>
-        <div class="fb-scroll"><table class="fb-table" id="live-me-table" data-vault="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-me-table" data-source="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
       </div>
       <div class="fb-card" id="live-opp-card">
         <span class="fb-kicker">Away roster</span>
         <h2>對手名單</h2>
-        <div class="fb-scroll"><table class="fb-table" id="live-opp-table" data-vault="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
+        <div class="fb-scroll"><table class="fb-table" id="live-opp-table" data-source="live_players" data-row-key="team_key,side,player"><thead></thead><tbody></tbody></table></div>
       </div>
     </div>
   </section>
@@ -737,11 +737,7 @@ const HOME = 'var(--fb-ball)', AWAY = 'var(--fb-away)';
 const S = { league: null, team: null, rankTeam: null, week: null, tab: 'league', sort: {} };
 const enc = encodeURIComponent;
 const $ = (id) => document.getElementById(id);
-// Rising Stars, Streaming, 本週戰況 and 下週對手 data ship bundled in the "vault" dataset ([{data: {id: rows}}]), unpacked into PRIV.
-const LOCKED = new Set(['rising', 'stream', 'live', 'next']);
-const PRIV = {};
-let unlocked = false;
-const rowsOf = (id) => { if (PRIV[id]) return PRIV[id]; const d = dash.data(id); return d.status === 'ok' && Array.isArray(d.data) ? d.data : []; };
+const rowsOf = (id) => { const d = dash.data(id); return d.status === 'ok' && Array.isArray(d.data) ? d.data : []; };
 const isPct = (name) => name.includes('%');
 const isRatio = (name) => name.includes('/');
 const fmtVal = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',')(v));
@@ -1337,14 +1333,6 @@ function drawHeader(ctx) {
   take.textContent = `${me.team_name} 目前 ${me.record}，聯盟第 ${me.standing} 名。最強的類別是 ${best}，最弱的是 ${worst}。括號內是平均名次。`;
 }
 
-/* ---------- vault ---------- */
-function openVault() {
-  const v = rowsOf('vault')[0];
-  if (!v?.data) return;
-  Object.assign(PRIV, v.data);
-  unlocked = true;
-}
-
 function showTab(tab, fromClick) {
   S.tab = tab;
   for (const b of document.querySelectorAll('.fb-tab')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
@@ -1389,9 +1377,7 @@ function render() {
   const ctx = { cats: catsOf(S.league), season, n: season.length || 14 };
   drawHeader(ctx);
   if (!PAGES[S.tab]) S.tab = 'league';
-  if (!unlocked && dash.data('vault').status === 'ok') openVault();
-  if (LOCKED.has(S.tab) && !unlocked) return;
-  if (NEEDS[S.tab].every((id) => PRIV[id] || dash.data(id).status === 'ok')) PAGES[S.tab](ctx);
+  if (NEEDS[S.tab].every((id) => dash.data(id).status === 'ok')) PAGES[S.tab](ctx);
 }
 
 window.FB_SAMPLE = false;

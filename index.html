@@ -288,22 +288,6 @@ window.dash = (() => {
 .fb-status-q { background: var(--color-warn); }
 .fb-table tr.fb-out td { opacity: .5; }
 .fb-empty { margin: 0; padding: 1.2rem; text-align: center; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); background: color-mix(in srgb, var(--fb-wood) 40%, var(--color-panel)); border-radius: 14px; }
-/* ---- PIN-locked tabs ---- */
-.fb-tab-locked { color: color-mix(in srgb, var(--color-fg-muted) 80%, transparent); }
-.fb-lock { width: .95em; height: .95em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
-.fb-tab[data-tip] { position: relative; }
-.fb-tab[data-tip]::after { content: attr(data-tip); position: absolute; z-index: 5; top: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(-4px); opacity: 0; pointer-events: none; white-space: nowrap;
-  font-size: var(--cds-font-size-caption); font-weight: 600; color: var(--fb-led); background: var(--fb-board); border-radius: 999px; padding: .3rem .8rem; box-shadow: var(--fb-shadow); transition: opacity var(--cds-dur-slow), transform var(--cds-dur-slow); }
-.fb-tab[data-tip]:hover::after, .fb-tab[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%); }
-@media (min-width: 40rem) { .fb-tabs { overflow: visible; } }
-.fb-lock-panel { min-height: 14rem; display: grid; place-content: center; justify-items: center; gap: .8rem; text-align: center; border-radius: 16px; border: 2px dashed var(--fb-wood-line); background: color-mix(in srgb, var(--fb-wood) 45%, var(--color-panel)); color: var(--color-fg-muted); }
-.fb-lock-panel .fb-lock { width: 3rem; height: 3rem; color: var(--fb-ball); stroke-width: 2; }
-.fb-lock-panel span { font-size: 1.2rem; font-weight: 600; color: var(--color-fg); }
-.fb-pin-field { display: grid; gap: .4rem; font-size: var(--cds-font-size-caption); }
-.fb-pin-field input { font: inherit; font-size: 1.1rem; text-align: center; letter-spacing: .2em; width: 12rem; max-width: 100%; padding: .5rem .8rem; border-radius: 999px; border: 2px solid var(--fb-wood-line); background: var(--color-panel); color: var(--color-fg); }
-.fb-pin-field input:focus-visible, .fb-pin-btn:focus-visible { outline: 2px solid var(--fb-ball); outline-offset: 2px; }
-.fb-pin-btn { font: inherit; font-weight: 600; color: #fff; background: var(--fb-ball); border: 0; border-radius: 999px; padding: .45rem 1.4rem; cursor: pointer; }
-.fb-pin-msg { margin: 0; min-height: 1.2em; font-size: var(--cds-font-size-caption); color: var(--color-bad); }
 .fb-fail { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 6rem; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
 .fb-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
 .fb [data-dash-source-state="empty"] { color: transparent; }
@@ -336,7 +320,6 @@ window.dash = (() => {
     background: color-mix(in srgb, var(--color-panel) 92%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
   .fb-tabs::-webkit-scrollbar { display: none; }
   .fb-tab { padding: .5rem .8rem; font-size: .9rem; }
-  .fb-tab[data-tip]::after { display: none; }
   .fb-card { padding: .9rem; border-radius: 16px; }
   .fb-card h2 { font-size: 1.1rem; }
   .fb-grid, .fb-rising { grid-template-columns: minmax(0, 1fr); gap: .8rem; }
@@ -349,7 +332,6 @@ window.dash = (() => {
   #roster-table td.fb-stat span { min-width: 2.2rem; padding: .12rem .3rem; }
   .fb-seg { flex-wrap: wrap; }
   .fb-stream-tiles b { font-size: 1.35rem; }
-  .fb-lock-panel { min-height: 12rem; padding: 1rem; }
 }
 </style>
 
@@ -392,23 +374,12 @@ window.dash = (() => {
     <button class="fb-tab" role="tab" id="tab-league" data-tab="league">聯盟數據</button>
     <button class="fb-tab" role="tab" id="tab-season" data-tab="season">整季分析</button>
     <button class="fb-tab" role="tab" id="tab-roster" data-tab="roster">陣容</button>
-    <button class="fb-tab fb-tab-locked" role="tab" id="tab-rising" data-tab="rising" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Rising Stars</button>
-    <button class="fb-tab fb-tab-locked" role="tab" id="tab-stream" data-tab="stream" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Streaming</button>
-    <button class="fb-tab fb-tab-locked" role="tab" id="tab-live" data-tab="live" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>本週戰況</button>
-    <button class="fb-tab fb-tab-locked" role="tab" id="tab-next" data-tab="next" data-tip="Lony's Secret hehe"><svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>下週對手</button>
+    <button class="fb-tab" role="tab" id="tab-rising" data-tab="rising">Rising Stars</button>
+    <button class="fb-tab" role="tab" id="tab-stream" data-tab="stream">Streaming</button>
+    <button class="fb-tab" role="tab" id="tab-live" data-tab="live">本週戰況</button>
+    <button class="fb-tab" role="tab" id="tab-next" data-tab="next">下週對手</button>
   </nav>
 
-  <section class="fb-page" id="pin" data-page="pin" hidden>
-    <div class="fb-card">
-      <div class="fb-lock-panel" id="pin-form">
-        <svg class="fb-lock" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
-        <span>Lony's Secret hehe</span>
-        <label class="fb-pin-field">輸入 PIN 解鎖<input id="pin-input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-        <button type="button" class="fb-pin-btn" id="pin-btn">解鎖</button>
-        <p class="fb-pin-msg" id="pin-msg" role="status"></p>
-      </div>
-    </div>
-  </section>
 
   <section class="fb-page" id="roster" data-page="roster" hidden>
     <div class="fb-card" id="roster-card">
@@ -618,7 +589,7 @@ dash.calc('ranks', {
 dash.calc('season', {
   inputs: ['ranks', 'weekly', 'categories'],
   title: '整季平均',
-  description: '每隊已完賽各週的勝敗、各類別平均名次和平均數值；聯盟排名依勝率，同勝率比贏下的類別總數。',
+  description: '每隊已完賽各週的類別勝敗總和（戰績）、各類別平均名次和平均數值；聯盟排名依類別勝率。',
   fn: (ranks, weekly, categories) => {
     const mean = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
     const raw = {};
@@ -626,8 +597,9 @@ dash.calc('season', {
     for (const r of weekly) { raw[r.week + '|' + r.team_key] = r; teams[r.team_key] ??= r; }
     const rows = Object.values(teams).map((t) => {
       const done = ranks.filter((r) => r.team_key === t.team_key && r.status === 'postevent');
-      const count = (x) => done.filter((r) => r.result === x).length;
-      const o = { league_id: t.league_id, team_key: t.team_key, team_name: t.team_name, is_me: t.is_me, weeks: done.length, w: count('W'), l: count('L'), t: count('T') };
+      // 戰績 = category wins summed over finished weeks, not H2H week wins (user asked 2026-10-27)
+      const sum = (f) => done.reduce((s, r) => s + (raw[r.week + '|' + r.team_key][f] || 0), 0);
+      const o = { league_id: t.league_id, team_key: t.team_key, team_name: t.team_name, is_me: t.is_me, weeks: done.length, w: sum('cat_w'), l: sum('cat_l'), t: sum('cat_t') };
       o.record = `${o.w}-${o.l}-${o.t}`;
       const avgs = [];
       for (const c of categories.filter((c) => c.league_id === t.league_id)) {
@@ -636,13 +608,12 @@ dash.calc('season', {
         if (o[c.name] != null) avgs.push(o[c.name]);
       }
       o.overall = mean(avgs);
-      o.cat_w_total = done.reduce((s, r) => s + (r.cat_w || 0), 0);
       return o;
     });
-    const pct = (x) => (x.weeks ? (x.w + x.t / 2) / x.weeks : 0);
+    const pct = (x) => (x.w + x.l + x.t ? (x.w + x.t / 2) / (x.w + x.l + x.t) : 0);
     for (const r of rows) {
       const peers = rows.filter((x) => x.league_id === r.league_id);
-      r.standing = 1 + peers.filter((x) => pct(x) > pct(r) || (pct(x) === pct(r) && x.cat_w_total > r.cat_w_total)).length;
+      r.standing = 1 + peers.filter((x) => pct(x) > pct(r) || (pct(x) === pct(r) && x.w > r.w)).length;
     }
     return rows;
   },
@@ -766,7 +737,7 @@ const HOME = 'var(--fb-ball)', AWAY = 'var(--fb-away)';
 const S = { league: null, team: null, rankTeam: null, week: null, tab: 'league', sort: {} };
 const enc = encodeURIComponent;
 const $ = (id) => document.getElementById(id);
-// Rising Stars, Streaming and 本週戰況 data ship AES-encrypted in the "vault" dataset; the PIN decrypts it into PRIV.
+// Rising Stars, Streaming, 本週戰況 and 下週對手 data ship bundled in the "vault" dataset ([{data: {id: rows}}]), unpacked into PRIV.
 const LOCKED = new Set(['rising', 'stream', 'live', 'next']);
 const PRIV = {};
 let unlocked = false;
@@ -779,11 +750,12 @@ const fmtRank = (v) => (v == null ? '—' : d3.format('.1f')(v));
 const keyOf = (...parts) => parts.map((p) => enc(p)).join(',');
 const whereOf = (obj) => Object.entries(obj).map(([k, v]) => `${enc(k)}=${enc(v)}`).join('&');
 
+// Red = strong, green = weak, same as the weekly rank tiers (user asked 2026-10-27)
 function rankBg(r, n) {
   if (r == null) return '';
   const t = (r - 1) / Math.max(1, n - 1);
   const a = Math.round(8 + Math.abs(t - 0.5) * 2 * 50);
-  return `color-mix(in srgb, var(${t < 0.5 ? '--color-ok' : '--color-bad'}) ${a}%, transparent)`;
+  return `color-mix(in srgb, var(${t < 0.5 ? '--color-bad' : '--color-ok'}) ${a}%, transparent)`;
 }
 
 // Weekly rank tiers for the league tables: r1 = 1st-3rd, r2 = 4th-6th, g2 = 4th-6th from last, g1 = last three.
@@ -869,7 +841,6 @@ function drawRadar(box, cats, series, n) {
     g.append('text').attr('x', lx).attr('y', ly).attr('dy', '0.35em')
       .attr('text-anchor', Math.abs(Math.cos(a)) < 0.2 ? 'middle' : Math.cos(a) > 0 ? 'start' : 'end').text(c.name);
   });
-  g.append('text').attr('x', cx + 4).attr('y', cy - R - 2).attr('dy', '-0.2em').text('第 1 名');
   series.forEach((s) => {
     const pts = cats.map((c, i) => pt(i, s.values[c.name] ?? n));
     g.append('polygon').attr('points', pts.join(' ')).style('fill', s.color).style('fill-opacity', 0.14).style('stroke', s.color).style('stroke-width', 2).style('stroke-linejoin', 'round');
@@ -1366,44 +1337,18 @@ function drawHeader(ctx) {
   take.textContent = `${me.team_name} 目前 ${me.record}，聯盟第 ${me.standing} 名。最強的類別是 ${best}，最弱的是 ${worst}。括號內是平均名次。`;
 }
 
-/* ---------- PIN lock ---------- */
-const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-async function openVault(pin) {
+/* ---------- vault ---------- */
+function openVault() {
   const v = rowsOf('vault')[0];
-  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(v.salt), iterations: v.iter }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(v.iv) }, key, b64(v.ct));
-  Object.assign(PRIV, JSON.parse(new TextDecoder().decode(plain)));
+  if (!v?.data) return;
+  Object.assign(PRIV, v.data);
   unlocked = true;
-  for (const b of document.querySelectorAll('.fb-tab-locked')) { b.classList.remove('fb-tab-locked'); b.removeAttribute('data-tip'); b.querySelector('.fb-lock')?.remove(); }
 }
-// The PIN is remembered per browser (user asked 2026-10-26), so each browser asks only once
-let autoTried = false;
-async function autoUnlock() {
-  autoTried = true;
-  let pin = null;
-  try { pin = localStorage.getItem('fb-pin'); } catch {}
-  if (!pin) return;
-  try { await openVault(pin); showTab(S.tab, false); } catch { try { localStorage.removeItem('fb-pin'); } catch {} }
-}
-async function tryPin() {
-  const msg = $('pin-msg');
-  if (dash.data('vault').status !== 'ok' || !rowsOf('vault')[0]) { msg.textContent = '資料還在載入，請稍後再試'; return; }
-  msg.textContent = '解鎖中…';
-  const pin = $('pin-input').value;
-  try { await openVault(pin); } catch { msg.textContent = 'PIN 不對，再試一次'; $('pin-input').select(); return; }
-  $('pin-input').value = '';
-  msg.textContent = '';
-  showTab(S.tab, false);
-}
-$('pin-btn')?.addEventListener('click', tryPin);
-$('pin-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryPin(); });
 
 function showTab(tab, fromClick) {
   S.tab = tab;
-  const view = LOCKED.has(tab) && !unlocked ? 'pin' : tab;
   for (const b of document.querySelectorAll('.fb-tab')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
-  for (const p of document.querySelectorAll('.fb-page')) p.hidden = p.dataset.page !== view;
+  for (const p of document.querySelectorAll('.fb-page')) p.hidden = p.dataset.page !== tab;
   if (fromClick) dash.setLink(tab);
   render();
 }
@@ -1444,7 +1389,7 @@ function render() {
   const ctx = { cats: catsOf(S.league), season, n: season.length || 14 };
   drawHeader(ctx);
   if (!PAGES[S.tab]) S.tab = 'league';
-  if (!autoTried && dash.data('vault').status === 'ok') autoUnlock();
+  if (!unlocked && dash.data('vault').status === 'ok') openVault();
   if (LOCKED.has(S.tab) && !unlocked) return;
   if (NEEDS[S.tab].every((id) => PRIV[id] || dash.data(id).status === 'ok')) PAGES[S.tab](ctx);
 }

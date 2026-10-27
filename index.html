@@ -1180,9 +1180,8 @@ function drawRoster(ctx) {
   const rows = rowsOf('roster').filter((r) => r.team_key === S.team).sort((a, b) => a.order - b.order);
   const me = ctx.season.find((r) => r.team_key === S.team);
   $('roster-team').textContent = me ? me.team_name : '';
-  const basis = rows[0]?.basis;
   $('roster-basis').textContent = rows.length
-    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，${basis === '上季' ? '第 2 週結束前依上季場均判斷，第 3 週起改用本季' : '依本季數據判斷'}。TO、PF 越少越好，只會標出後段。`
+    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，依本季數據判斷。TO、PF 越少越好，只會標出後段。`
     : '還沒有這隊的陣容資料。';
   const cols = [
     { field: 'slot', label: '位置', name: true },

@@ -198,6 +198,8 @@ window.dash = (() => {
 .fb-band-y { color: color-mix(in srgb, var(--color-ok) 70%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 32%, transparent); }
 .fb-band-z { color: color-mix(in srgb, var(--color-ok) 80%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 13%, transparent); }
 #roster-table td.fb-stat { padding: .2rem .3rem; }
+#roster-card { position: relative; }
+#roster-table td.fb-contrib { font-weight: 600; cursor: help; text-decoration: underline dotted color-mix(in srgb, var(--color-fg) 35%, transparent); text-underline-offset: 3px; }
 #roster-table td.fb-stat span { display: inline-block; min-width: 2.6rem; border-radius: 999px; padding: .15rem .45rem; }
 .fb-medal { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; margin-left: .35rem; border-radius: 50%; font-size: .62rem; font-weight: 700; color: var(--fb-board); vertical-align: .05em; }
 .fb-medal-1 { background: var(--fb-ball); color: #fff; }
@@ -1180,12 +1182,46 @@ function drawCore() {
   }));
 }
 
+// Contribution: each player's season totals (per game x GP) as a share of the whole roster's totals, per counting
+// category, then a weighted average (same weights as the core players). FG%/FT% have no share, so the tooltip shows
+// how much the player moves the team's percentage instead (needs FGM/FGA from core.js).
+const CONTRIB_W = { OREB: 0.7, REB: 0.7, PTS: 1.2 };
+function contribution(rows, cats) {
+  const count = cats.filter((c) => !c.endsWith('%') && c !== 'TO' && c !== 'PF');
+  const tot = (r, c) => (parseFloat(r[c]) || 0) * (r.gp || 0);
+  const team = Object.fromEntries(count.map((c) => [c, rows.reduce((s, r) => s + tot(r, c), 0)]));
+  const shots = (r) => { const v = (r.shots || '').split('/').map(parseFloat); return v.length === 4 && v.every((x) => !isNaN(x)) ? v.map((x) => x * (r.gp || 0)) : null; };
+  const sums = [0, 1, 2, 3].map((i) => rows.reduce((s, r) => s + (shots(r)?.[i] || 0), 0));
+  const pct = (mi, ai, sh) => {
+    if (!sh || !sums[ai] || sums[ai] === sh[ai]) return null;
+    return sums[mi] / sums[ai] - (sums[mi] - sh[mi]) / (sums[ai] - sh[ai]);
+  };
+  const wsum = count.reduce((s, c) => s + (CONTRIB_W[c] ?? 1), 0);
+  const out = new Map();
+  for (const r of rows) {
+    if (!r.gp) continue;
+    const by = count.map((c) => ({ cat: c, val: tot(r, c), team: team[c], share: team[c] ? tot(r, c) / team[c] : 0 }));
+    const sh = shots(r);
+    out.set(r, { total: by.reduce((s, x) => s + (CONTRIB_W[x.cat] ?? 1) * x.share, 0) / wsum, by,
+      fg: cats.includes('FG%') ? pct(0, 1, sh) : null, ft: cats.includes('FT%') ? pct(2, 3, sh) : null });
+  }
+  return out;
+}
+function contribLines(r, s) {
+  const n = d3.format(',.0f'), p = d3.format('.1%'), pp = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+  return [`${r.player}・總貢獻 ${p(s.total)}`,
+    ...s.by.map((x) => `${x.cat}　${p(x.share)}（${n(x.val)} / ${n(x.team)}）`),
+    ...(s.fg != null ? [`FG%　讓全隊命中率 ${pp(s.fg)}`] : []),
+    ...(s.ft != null ? [`FT%　讓全隊命中率 ${pp(s.ft)}`] : [])];
+}
+
 function drawRoster(ctx) {
   const rows = rowsOf('roster').filter((r) => r.team_key === S.team).sort((a, b) => a.order - b.order);
   const me = ctx.season.find((r) => r.team_key === S.team);
+  const share = contribution(rows, ctx.cats.map((c) => c.name));
   $('roster-team').textContent = me ? me.team_name : '';
   $('roster-basis').textContent = rows.length
-    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，依本季數據判斷。TO、PF 越少越好，只會標出後段。`
+    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，依本季數據判斷。TO、PF 越少越好，只會標出後段。貢獻度是本季累計數據佔全隊的比例，各類別加權平均（OREB、REB 各 0.7，PTS 1.2，不算 TO、PF 和命中率），滑過去或點一下可以看各類別。`
     : '還沒有這隊的陣容資料。';
   const cols = [
     { field: 'slot', label: '位置', name: true },
@@ -1194,15 +1230,27 @@ function drawRoster(ctx) {
     { field: 'pos', label: '可打位置', fmt: (r) => r.pos.replace(/,/g, ' / ') },
     { field: 'status', label: '狀態', fmt: (r) => r.status || '' },
     { field: 'gp', label: 'GP', fmt: (r) => (r.gp == null ? '—' : r.gp) },
+    { field: 'contrib', label: '貢獻度', fmt: (r) => (share.has(r) ? d3.format('.1%')(share.get(r).total) : '—') },
     ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => r[c.name] ?? '—' })),
   ];
   drawTable($('roster-table'), cols, rows, { key: (r) => keyOf(r.team_key, r.player), rowClass: (r) => (r.status === 'O' || r.status === 'INJ' || /^IL/.test(r.slot) ? 'fb-out' : '') });
   [...$('roster-table').tBodies[0].rows].forEach((tr, i) => {
     const r = rows[i];
     if (r.core_rank) tr.cells[1].append(el('span', { class: `fb-medal fb-medal-${r.core_rank}` }, String(r.core_rank)));
+    if (share.has(r)) {
+      const td = tr.cells[6], tip = tipFor($('roster-card'));
+      td.classList.add('fb-contrib');
+      const show = () => {
+        const box = $('roster-card').getBoundingClientRect(), b = td.getBoundingClientRect();
+        tip.show(contribLines(r, share.get(r)), b.left - box.left, b.top - box.top);
+      };
+      td.addEventListener('mouseenter', show);
+      td.addEventListener('mouseleave', () => tip.hide());
+      td.addEventListener('click', show);
+    }
     if (r.status) tr.cells[4].replaceChildren(el('span', { class: `fb-status${/^(GTD|DTD|Q|D)$/.test(r.status) ? ' fb-status-q' : ''}` }, r.status));
     ctx.cats.forEach((c, k) => {
-      const td = tr.cells[6 + k], band = (r.bands || '')[k];
+      const td = tr.cells[7 + k], band = (r.bands || '')[k];
       td.classList.add('fb-stat');
       if (band && band !== '-') td.replaceChildren(el('span', { class: `fb-band-${band}` }, td.textContent));
     });

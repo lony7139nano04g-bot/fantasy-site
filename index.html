@@ -247,8 +247,11 @@ window.dash = (() => {
 .fb-sort { font: inherit; color: inherit; background: none; border: 0; padding: .1rem .3rem; border-radius: 999px; cursor: pointer; }
 .fb-sort:hover { background: var(--fb-ball-soft); }
 .fb-res { display: inline-block; min-width: 2em; border-radius: 999px; padding: .1rem .55em; font-weight: 700; }
-.fb-res-W, .fb-edge-我方 { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 15%, transparent); }
-.fb-res-L, .fb-edge-對手 { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 15%, transparent); }
+.fb-edge-我方 { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 15%, transparent); }
+.fb-edge-對手 { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 15%, transparent); }
+/* W/L follow the rank colours: red is good, green is bad. */
+.fb-res-W { color: color-mix(in srgb, var(--color-bad) 75%, var(--color-fg)); background: color-mix(in srgb, var(--color-bad) 22%, transparent); }
+.fb-res-L { color: color-mix(in srgb, var(--color-ok) 75%, var(--color-fg)); background: color-mix(in srgb, var(--color-ok) 22%, transparent); }
 .fb-res-T, .fb-edge-均勢 { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 15%, transparent); }
 
 /* ---- charts ---- */
@@ -1327,8 +1330,9 @@ function drawHeader(ctx) {
   take.hidden = !me || !me.weeks;
   if (!me || !me.weeks) { take.textContent = ''; return; }
   const ranked = ctx.cats.filter((c) => me[c.name] != null).sort((a, b) => me[a.name] - me[b.name]);
-  const best = ranked.slice(0, 2).map((c) => `${c.name}（${fmtRank(me[c.name])}）`).join('、');
-  const worst = ranked.slice(-2).reverse().map((c) => `${c.name}（${fmtRank(me[c.name])}）`).join('、');
+  const short = (v) => (Number.isInteger(v) ? String(v) : fmtRank(v));
+  const best = ranked.slice(0, 2).map((c) => `${c.name}（${short(me[c.name])}）`).join('、');
+  const worst = ranked.slice(-2).reverse().map((c) => `${c.name}（${short(me[c.name])}）`).join('、');
   take.textContent = `${me.team_name} 目前 ${me.record}，聯盟第 ${me.standing} 名。最強的類別是 ${best}，最弱的是 ${worst}。括號內是平均名次。`;
 }
 

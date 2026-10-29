@@ -1221,21 +1221,23 @@ function drawRoster(ctx) {
   const share = contribution(rows, ctx.cats.map((c) => c.name));
   $('roster-team').textContent = me ? me.team_name : '';
   $('roster-basis').textContent = rows.length
-    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，依本季數據判斷。TO、PF 越少越好，只會標出後段。貢獻度是本季累計數據佔全隊的比例，各類別加權平均（OREB、REB 各 0.7，PTS 1.2，不算 TO、PF 和命中率），滑過去或點一下可以看各類別。`
+    ? `數字是本季場均（GP 是出賽場數）；底色是這個類別在聯盟所有被選走球員中的區間，依本季數據判斷。TO、PF 越少越好，只會標出後段。CTB（貢獻度）是本季累計數據佔全隊的比例，各類別加權平均（OREB、REB 各 0.7，PTS 1.2，不算 TO、PF 和命中率），滑過去或點一下可以看各類別。點欄位標題可排序。`
     : '還沒有這隊的陣容資料。';
   const cols = [
-    { field: 'slot', label: '位置', name: true },
+    // 位置 sorts back to Yahoo's lineup order; number columns sort largest first on the first click.
+    { field: 'slot', label: '位置', name: true, sortVal: (r) => r.order },
     { field: 'player', label: '球員' },
     { field: 'nba_team', label: '球隊' },
     { field: 'pos', label: '可打位置', fmt: (r) => r.pos.replace(/,/g, ' / ') },
-    { field: 'status', label: '狀態', fmt: (r) => r.status || '' },
-    { field: 'gp', label: 'GP', fmt: (r) => (r.gp == null ? '—' : r.gp) },
-    { field: 'contrib', label: '貢獻度', fmt: (r) => (share.has(r) ? d3.format('.1%')(share.get(r).total) : '—') },
-    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => r[c.name] ?? '—' })),
+    { field: 'status', label: '狀態', fmt: (r) => r.status || '', sortVal: (r) => r.status || null },
+    { field: 'gp', label: 'GP', desc: true, fmt: (r) => (r.gp == null ? '—' : r.gp) },
+    { field: 'contrib', label: 'CTB', desc: true, fmt: (r) => (share.has(r) ? d3.format('.1%')(share.get(r).total) : '—'), sortVal: (r) => share.get(r)?.total ?? null },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, desc: true, fmt: (r) => r[c.name] ?? '—', sortVal: (r) => (r[c.name] == null || isNaN(parseFloat(r[c.name])) ? null : parseFloat(r[c.name])) })),
   ];
-  drawTable($('roster-table'), cols, rows, { key: (r) => keyOf(r.team_key, r.player), rowClass: (r) => (r.status === 'O' || r.status === 'INJ' || /^IL/.test(r.slot) ? 'fb-out' : '') });
-  [...$('roster-table').tBodies[0].rows].forEach((tr, i) => {
-    const r = rows[i];
+  drawTable($('roster-table'), cols, rows, { sortable: true, sort: { key: 'slot', dir: 1 }, key: (r) => keyOf(r.team_key, r.player), rowClass: (r) => (r.status === 'O' || r.status === 'INJ' || /^IL/.test(r.slot) ? 'fb-out' : '') });
+  const byKey = new Map(rows.map((r) => [keyOf(r.team_key, r.player), r]));
+  [...$('roster-table').tBodies[0].rows].forEach((tr) => {
+    const r = byKey.get(tr.dataset.key);
     if (r.core_rank) tr.cells[1].append(el('span', { class: `fb-medal fb-medal-${r.core_rank}` }, String(r.core_rank)));
     if (share.has(r)) {
       const td = tr.cells[6], tip = tipFor($('roster-card'));

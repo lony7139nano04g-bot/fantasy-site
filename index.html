@@ -746,6 +746,7 @@ const isRatio = (name) => name.includes('/');
 const fmtVal = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',')(v));
 const fmtAvg = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',.1f')(v));
 const fmtRank = (v) => (v == null ? '—' : d3.format('.1f')(v));
+const fmtRound = (v) => (v == null ? '—' : String(Math.round(v)));
 const keyOf = (...parts) => parts.map((p) => enc(p)).join(',');
 const whereOf = (obj) => Object.entries(obj).map(([k, v]) => `${enc(k)}=${enc(v)}`).join('&');
 
@@ -1038,8 +1039,8 @@ function drawSeason(ctx) {
     { field: 'team_name', label: '隊伍', name: true },
     { field: 'record', label: '戰績', sortVal: (r) => r.standing },
     { field: 'standing', label: '排名' },
-    { field: 'overall', label: '平均', fmt: (r) => fmtRank(r.overall), chip: (r) => rankBg(r.overall, ctx.n) },
-    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => fmtRank(r[c.name]), chip: (r) => rankBg(r[c.name], ctx.n) })),
+    { field: 'overall', label: '平均', fmt: (r) => fmtRound(r.overall), chip: (r) => rankBg(r.overall, ctx.n) },
+    ...ctx.cats.map((c) => ({ field: c.name, label: c.name, fmt: (r) => fmtRound(r[c.name]), chip: (r) => rankBg(r[c.name], ctx.n) })),
   ];
   drawTable($('season-table'), cols, ctx.season, { sortable: true, sort: { key: 'standing', dir: 1 }, key: (r) => keyOf(r.team_key), rowClass: (r) => (r.team_key === S.team ? 'fb-me' : '') });
 }

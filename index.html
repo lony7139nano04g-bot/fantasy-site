@@ -742,7 +742,8 @@ const HOME = 'var(--fb-ball)', AWAY = 'var(--fb-away)';
 const S = { league: null, team: null, rankTeam: null, week: null, tab: 'league', sort: {} };
 const enc = encodeURIComponent;
 const $ = (id) => document.getElementById(id);
-const rowsOf = (id) => { const d = dash.data(id); return d.status === 'ok' && Array.isArray(d.data) ? d.data : []; };
+// rising and streaming are uploaded as {rows: [...]} so the Dashboard type keeps their nested fields (see update.py WRAP).
+const rowsOf = (id) => { const d = dash.data(id); return d.status !== 'ok' ? [] : Array.isArray(d.data) ? d.data : Array.isArray(d.data?.rows) ? d.data.rows : []; };
 const isPct = (name) => name.includes('%');
 const isRatio = (name) => name.includes('/');
 const fmtVal = (name, v) => (v == null ? '—' : isPct(name) ? d3.format('.3f')(v).replace(/^0/, '') : isRatio(name) ? d3.format('.2f')(v) : d3.format(',')(v));

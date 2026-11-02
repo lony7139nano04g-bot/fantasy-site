@@ -460,9 +460,9 @@ window.dash = (() => {
       <div class="fb-card" id="live-recs-card">
         <span class="fb-kicker">Free agents</span>
         <h2>可以補的人</h2>
-        <p class="fb-note">試算自由市場前 75 名球員，每人搭配丟掉這一隊名單上的每一位，列出期望贏項增加最多的組合。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
+        <p class="fb-note">看長期，不看這一週：比較自由市場前 75 名球員和這一隊可以丟的人整季的場均價值（本季數據，樣本少時參考上季）。核心球員和 Yahoo 持有率超過 60% 的人不會被列為丟掉的對象。價值是各類別在聯盟的標準分數加總，差距越大越值得換。「W (日期)」表示還在 waiver，要等到那天之後才能上場。</p>
         <div class="fb-scroll"><table class="fb-table" id="live-recs" data-source="live_recs" data-row-key="team_key,kind,rank"><thead></thead><tbody></tbody></table></div>
-        <p class="fb-empty" id="live-recs-empty" hidden>目前沒有能明顯提升本週戰況的自由球員。</p>
+        <p class="fb-empty" id="live-recs-empty" hidden>目前沒有長期來看明顯比陣容裡可丟的人更好的自由球員。</p>
       </div>
       <div class="fb-card" id="live-bench-card">
         <span class="fb-kicker">Bench</span>
@@ -1130,8 +1130,8 @@ function drawLive(ctx) {
     { field: 'availability', label: '可撿' },
     { field: 'drop', label: '丟掉' },
     { field: 'games_left', label: '本週可上', fmt: (r) => `${r.games_left} 場` },
-    { field: 'gain', label: '期望贏項', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
-    { field: 'flips', label: '翻盤類別', fmt: (r) => r.flips ? r.flips.split(' ').map((f) => (f[0] === '+' ? '轉贏 ' : '轉輸 ') + f.slice(1)).join('、') : '—' },
+    { field: 'gain', label: '長期價值', fmt: (r) => `+${d3.format('.2f')(r.gain)}` },
+    { field: 'flips', label: '比較強／弱', fmt: (r) => r.flips ? r.flips.split(' ').map((f) => (f[0] === '+' ? '強 ' : '弱 ') + f.slice(1)).join('、') : '—' },
   ], adds, { key: (r) => keyOf(r.team_key, r.kind, r.rank) });
 
   const bench = recs.filter((r) => r.kind === 'bench').sort((a, b) => a.rank - b.rank);
